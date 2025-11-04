@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+   <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>照片地圖</title>
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+      <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.css">
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+      <script src="https://unpkg.com/@popperjs/core@2"></script>
+      <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+      <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/plugins/Tooltip.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      <style>
+		body {
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			/* Prevent body scrollbars */
+		}
+
+		#container {
+			display: flex;
+			width: 100vw;
+			height: 100vh;
+		}
+
+		#map {
+			flex-grow: 1;
+			/* Map takes remaining space */
+			height: 100%;
+			position: relative;
+			/* For crosshair positioning */
+		}
+
+		#resizer {
+			width: 5px;
+			cursor: col-resize;
+			background-color: #ccc;
+			height: 100%;
+			z-index: 1000;
+			/* Ensure it's on top of the map */
+			flex-shrink: 0;
+			/* Prevent it from shrinking */
+		}
+
+		#sidebar {
+			width: 900px;
+			/* Initial width */
+			height: 100%;
+			background-color: #f2f2f2;
+			overflow-y: auto;
+			flex-shrink: 0;
+			/* Prevent sidebar from shrinking */
+		}
+
+		#sidebar-content {
+			padding: 10px;
+		}
+
+		#sidebar-content img {
+			max-width: 100%;
+			height: auto;
+			max-height: 70vh;
+			object-fit: contain;
+		}
+
+		#crosshair {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			width: 20px;
+			height: 20px;
+			transform: translate(-50%, -50%);
+			pointer-events: none;
+			z-index: 9999;
+		}
+
+		#crosshair::before,
+		#crosshair::after {
+			content: '';
+			position: absolute;
+			background: red;
+		}
+
+		#crosshair::before {
+			left: 50%;
+			width: 2px;
+			height: 100%;
+			transform: translateX(-50%);
+		}
+
+		#crosshair::after {
+			top: 50%;
+			height: 2px;
+			width: 100%;
+			transform: translateY(-50%);
+		}
+
+		.tab {
+			overflow: hidden;
+			border: 1px solid #ccc;
+			background-color: #f1f1f1;
+		}
+
+		.tab button {
+			background-color: inherit;
+			float: left;
+			border: none;
+			outline: none;
+			cursor: pointer;
+			padding: 14px 16px;
+			transition: 0.3s;
+		}
+
+		.tab button:hover {
+			background-color: #ddd;
+		}
+
+		.tab button.active {
+			background-color: #ccc;
+		}
+
+		.tabcontent {
+			display: none;
+			padding: 6px 12px;
+			border: 1px solid #ccc;
+			border-top: none;
+		}
+
+		.grid-media-container {
+			display: grid;
+			gap: 5px;
+		}
+
+		.grid-media-container img,
+		.grid-media-container video {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			cursor: pointer;
+		}
+
+		#grid-pagination button {
+			margin: 5px;
+		}
+      </style>
+   </head>
+   <body>
+      <div id="container">
+      <div id="map">
+         <div id="crosshair"></div>
+      </div>
+      <div id="resizer"></div>
+      <div id="sidebar">
+         <div id="sidebar-content">
+            <div class="tab">
+               <button class="tablinks" onclick="openTab(event, 'single-view')">單一檢視</button>
+               <button class="tablinks" onclick="openTab(event, 'photo-grid-view')">照片牆</button>
+               <button class="tablinks" onclick="openTab(event, 'video-grid-view')">影片牆</button>
+               <button class="tablinks" onclick="openTab(event, 'heatmap-view')">熱力圖</button>
+               <button class="tablinks" onclick="openTab(event, 'statistics-view')">統計</button>
+               <button class="tablinks" onclick="openTab(event, 'filter-view')">篩選器</button>
+            </div>
+            <div id="single-view" class="tabcontent"></div>
+            <div id="filter-view" class="tabcontent">
+               <div id="filter-controls">
+                  <div class="filter-group">
+                     <label for="year-select">年份:</label>
+                     <select id="year-select">
+                        <option value="all">All</option>
+                     </select>
+                     <label for="month-select">月份:</label>
+                     <select id="month-select">
+                        <option value="all">All</option>
+                        <option value="01">1</option>
+                        <option value="02">2</option>
+                        <option value="03">3</option>
+                        <option value="04">4</option>
+                        <option value="05">5</option>
+                        <option value="06">6</option>
+                        <option value="07">7</option>
+                        <option value="08">8</option>
+                        <option value="09">9</option>
+                        <option value="10">10</option>
+                        <option value="11">11</option>
+                        <option value="12">12</option>
+                     </select>
+                     <label for="day-select">日期:</label>
+                     <select id="day-select">
+                        <option value="all">All</option>
+                     </select>
+                  </div>
+                  <div class="filter-group">
+                     <label for="start-date">開始日期:</label>
+                     <input type="date" id="start-date">
+                     <label for="end-date">結束日期:</label>
+                     <input type="date" id="end-date">
+                  </div>
+                  <div class="filter-group">
+                     <label for="camera-select">相機型號:</label>
+                     <select id="camera-select">
+                        <option value="all">All</option>
+                     </select>
+                  </div>
+                  <div class="filter-group">
+                     <input type="checkbox" id="show-assigned-gps-checkbox" checked>
+                     <label for="show-assigned-gps-checkbox">顯示沒有定位的照片</label>
+                  </div>
+                  <button id="filter-button">Filter</button>
+               </div>
+            </div>
+            <div id="photo-grid-view" class="tabcontent">
+               <div id="grid-controls" style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                     <label for="grid-rows">Rows:</label>
+                     <select id="grid-rows" onchange="changeGridSize()">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5" selected>5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                        <option value="11">11</option>
+                        <option value="12">12</option>
+                        <option value="13">13</option>
+                        <option value="14">14</option>
+                        <option value="15">15</option>
+                        <option value="16">16</option>
+                        <option value="17">17</option>
+                        <option value="18">18</option>
+                        <option value="19">19</option>
+                        <option value="20">20</option>
+                     </select>
+                     <label for="grid-cols">Cols:</label>
+                     <select id="grid-cols" onchange="changeGridSize()">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5" selected>5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                        <option value="11">11</option>
+                        <option value="12">12</option>
+                        <option value="13">13</option>
+                        <option value="14">14</option>
+                        <option value="15">15</option>
+                        <option value="16">16</option>
+                        <option value="17">17</option>
+                        <option value="18">18</option>
+                        <option value="19">19</option>
+                        <option value="20">20</option>
+                     </select>
+                  </div>
+                  <div id="photo-grid-pagination"></div>
+               </div>
+               <div id="photo-grid-container" class="grid-media-container"></div>
+            </div>
+            <div id="video-grid-view" class="tabcontent">
+               <div id="video-grid-controls" style="display: flex; justify-content: space-between; align-items: center;">
+                  <!-- Controls for video grid can be different if needed -->
+                  <div>
+                     <label for="video-grid-rows">Rows:</label>
+                     <select id="video-grid-rows" onchange="changeVideoGridSize()">
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5" selected>5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                     </select>
+                     <label for="video-grid-cols">Cols:</label>
+                     <select id="video-grid-cols" onchange="changeVideoGridSize()">
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                     </select>
+                     <input type="checkbox" id="play-all-videos-checkbox" onchange="togglePlayAllVideos()">
+                     <label for="play-all-videos-checkbox">同時播放所有影片</label>
+                  </div>
+                  <div id="video-grid-pagination"></div>
+               </div>
+               <div id="video-grid-container" class="grid-media-container"></div>
+            </div>
+            <div id="heatmap-view" class="tabcontent" style="display: flex; flex-direction: column; align-items: center;">
+               <script>
+				// This script will now generate the heatmap data and render the heatmaps
+				document.addEventListener('DOMContentLoaded', function () {
+				   // Find the heatmap-view tab button
+				   const heatmapTabButton = Array.from(document.querySelectorAll('.tablinks')).find(btn => btn.textContent === '熱力圖');
+				   // Use a MutationObserver to detect when the heatmap tab is shown
+				   const observer = new MutationObserver((mutations) => {
+					  mutations.forEach((mutation) => {
+						 if (mutation.attributeName === 'style' && document.getElementById('heatmap-view').style.display === 'block') {
+							generateAndRenderHeatmaps();
+							observer.disconnect(); // Stop observing once rendered
+						 }
+					  });
+				   });
+				   observer.observe(document.getElementById('heatmap-view'), {
+					  attributes: true
+				   });
+				   // Also handle the case where the tab is opened by clicking
+				   if (heatmapTabButton) {
+					  heatmapTabButton.addEventListener('click', function () {
+						 // Check if heatmaps are already rendered
+						 if (!document.getElementById('heatmap-view').hasChildNodes()) {
+							generateAndRenderHeatmaps();
+						 }
+					  }, {
+						 once: true
+					  }); // Only run once
+				   }
+
+				   function generateAndRenderHeatmaps() {
+					  const dateCounts = {};
+					  locations.forEach(loc => {
+						 if (loc.date_taken) {
+							const date = loc.date_taken.split(' ')[0];
+							dateCounts[date] = (dateCounts[date] || 0) + 1;
+						 }
+					  });
+					  const photo_counts_data = Object.keys(dateCounts).map(date => ({
+						 date: date,
+						 count: dateCounts[date]
+					  }));
+					  const years = [...new Set(photo_counts_data.map(d => d.date.substring(0, 4)))].sort().reverse();
+					  const heatmapsContainer = document.getElementById('heatmap-view');
+					  heatmapsContainer.innerHTML = ''; // Clear potential previous content
+					  years.forEach(year => {
+						 const yearTitle = document.createElement('h3');
+						 yearTitle.textContent = year;
+						 document.getElementById('heatmap-view').appendChild(yearTitle);
+						 const heatmapId = `cal-heatmap-${year}`;
+						 const heatmapDiv = document.createElement('div');
+						 heatmapDiv.id = heatmapId;
+						 heatmapDiv.style.width = '100%';
+						 heatmapDiv.style.marginBottom = '20px';
+						 heatmapsContainer.appendChild(heatmapDiv);
+						 const year_data = photo_counts_data.filter(d => d.date.startsWith(year));
+						 const cal = new CalHeatmap();
+						 cal.paint({
+							itemSelector: `#${heatmapId}`,
+							data: {
+							   source: year_data,
+							   x: 'date',
+							   y: 'count'
+							},
+							date: {
+							   start: new Date(`${year}-01-01`)
+							},
+							range: 12,
+							scale: {
+							   color: {
+								  scheme: 'Greens',
+								  type: 'threshold',
+								  domain: [10, 20, 30, 40]
+							   }
+							},
+							domain: {
+							   type: 'month',
+							   gutter: 4,
+							   label: {
+								  text: 'MMM',
+								  textAlign: 'start',
+								  position: 'top'
+							   }
+							},
+							subDomain: {
+							   type: 'day',
+							   radius: 2,
+							   width: 11,
+							   height: 11,
+							   gutter: 2
+							}
+						 }, [
+						 [
+							   Tooltip,
+							   {
+								  text: function (date, value, dayjsDate) {
+									 return (
+										(value ? value : 'No') +
+										' photos on ' +
+										dayjsDate.format('LL')
+									 );
+								  }
+							   }
+							]
+						 ]);
+					  });
+				   }
+				});
+               </script>
+            </div>
+            <div id="statistics-view" class="tabcontent">
+               <canvas id="yearly-chart" style="margin-bottom: 20px;"></canvas>
+               <canvas id="monthly-chart" style="margin-bottom: 20px;"></canvas>
+               <canvas id="camera-chart" style="height: 800px;"></canvas>
+               <script>            
+                  document.addEventListener('DOMContentLoaded', function () {
+                     const statisticsTab = document.getElementById('statistics-view');
+                     const observer = new MutationObserver((mutations) => {
+                  	  mutations.forEach((mutation) => {
+                  		 if (mutation.attributeName === 'style' && statisticsTab.style.display === 'block') {
+                  			renderStatisticsCharts();
+                  			observer.disconnect();
+                  		 }
+                  	  });
+                     });
+                     observer.observe(statisticsTab, {
+                  	  attributes: true
+                     });
+                  
+                     function renderStatisticsCharts() {
+                  		const yearlyData = {};
+                  		const monthlyData = {};
+                  
+                  		locations.forEach(loc => {
+                  			if (loc.date_taken) {
+                  				const date = new Date(loc.date_taken);
+                  				const year = date.getFullYear().toString();
+                  				const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                  
+                  				// Yearly data
+                  				if (!yearlyData[year]) {
+                  					yearlyData[year] = { native_gps: 0, no_native_gps: 0, total: 0 };
+                  				}
+                  				if (loc.has_native_gps) {
+                  					yearlyData[year].native_gps++;
+                  				} else {
+                  					yearlyData[year].no_native_gps++;
+                  				}
+                  				yearlyData[year].total++;
+                  
+                  				// Monthly data
+                  				if (!monthlyData[month]) {
+                  					monthlyData[month] = { native_gps: 0, no_native_gps: 0, total: 0 };
+                  				}
+                  				if (loc.has_native_gps) {
+                  					monthlyData[month].native_gps++;
+                  				} else {
+                  					monthlyData[month].no_native_gps++;
+                  				}
+                  				monthlyData[month].total++;
+                  			}
+                  		});
+                  
+                  		const years = Object.keys(yearlyData).sort();
+                  		const nativeGpsCounts = years.map(year => yearlyData[year].native_gps);
+                  		const noNativeGpsCounts = years.map(year => yearlyData[year].no_native_gps);
+                  		const totalCounts = years.map(year => yearlyData[year].total);
+                  		new Chart(document.getElementById('yearly-chart'), {
+                  			type: 'bar',
+                  			data: {
+                  				labels: years,
+                  				datasets: [{
+                  					label: '原生定位',
+                  					data: nativeGpsCounts,
+                  					backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                  					borderColor: 'rgba(75, 192, 192, 1)',
+                  					borderWidth: 1
+                  				},
+                  				{
+                  					label: '沒有原生定位',
+                  					data: noNativeGpsCounts,
+                  					backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                  					borderColor: 'rgba(255, 99, 132, 1)',
+                  					borderWidth: 1
+                  				},
+                  				{
+                  					label: '共計',
+                  					data: totalCounts,
+                  					backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                  					borderColor: 'rgba(54, 162, 235, 1)',
+                  					borderWidth: 1
+                  				}]
+                  			},
+                  			options: {
+                  				scales: {
+                  					y: {
+                  						beginAtZero: true
+                  					}
+                  				},
+                  				plugins: {
+                  					title: {
+                  						display: true,
+                  						text: '每年度照片數量'
+                  					}
+                  				}
+                  			}
+                  		});
+                  
+                  		const months = Object.keys(monthlyData).sort();
+                  		const monthlyNativeGpsCounts = [];
+                  		const monthlyNoNativeGpsCounts = [];
+                  		const monthlyTotalCounts = [];
+                  
+                  		for (let i = 1; i <= 12; i++) {
+                  			const month = i.toString().padStart(2, '0');
+                  			if (monthlyData[month]) {
+                  				monthlyNativeGpsCounts.push(monthlyData[month].native_gps);
+                  				monthlyNoNativeGpsCounts.push(monthlyData[month].no_native_gps);
+                  				monthlyTotalCounts.push(monthlyData[month].total);
+                  			} else {
+                  				monthlyNativeGpsCounts.push(0);
+                  				monthlyNoNativeGpsCounts.push(0);
+                  				monthlyTotalCounts.push(0);
+                  			}
+                  		}
+                  
+                  		new Chart(document.getElementById('monthly-chart'), {
+                  			type: 'bar',
+                  			data: {
+                  				labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+                  				datasets: [{
+                  					label: '原生定位',
+                  					data: monthlyNativeGpsCounts,
+                  					backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                  					borderColor: 'rgba(75, 192, 192, 1)',
+                  					borderWidth: 1
+                  				},
+                  				{
+                  					label: '沒有原生定位',
+                  					data: monthlyNoNativeGpsCounts,
+                  					backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                  					borderColor: 'rgba(255, 99, 132, 1)',
+                  					borderWidth: 1
+                  				},
+                  				{
+                  					label: '共計',
+                  					data: monthlyTotalCounts,
+                  					backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                  					borderColor: 'rgba(54, 162, 235, 1)',
+                  					borderWidth: 1
+                  				}]
+                  			},
+                  			options: {
+                  				scales: {
+                  					y: {
+                  						beginAtZero: true
+                  					}
+                  				},
+                  				plugins: {
+                  					title: {
+                  						display: true,
+                  						text: '每月份照片數量'
+                  					}
+                  				}
+                  			}
+                  		});
+                  
+                  		// Camera Statistics Chart
+                  		const cameraCounts = locations.reduce((acc, loc) => {
+                  			const model = loc.camera_model || 'NA';
+                  			acc[model] = (acc[model] || 0) + 1;
+                  			return acc;
+                  		}, {});
+                  		const sortedCameras = Object.entries(cameraCounts).sort((a, b) => b[1] - a[1]);
+                  		const cameraLabels = sortedCameras.map(item => item[0]);
+                  		const cameraData = sortedCameras.map(item => item[1]);
+                  		new Chart(document.getElementById('camera-chart'), {
+                  			type: 'bar',
+                  			data: {
+                  				labels: cameraLabels,
+                  				datasets: [{
+                  					label: '照片數量',
+                  					data: cameraData,
+                  					backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                  					borderColor: 'rgba(153, 102, 255, 1)',
+                  					borderWidth: 1
+                  				}]
+                  			},
+                  			options: {
+                  				indexAxis: 'y',
+                  				scales: {
+                  					x: {
+                  						type: 'logarithmic',
+                  						beginAtZero: true
+                  					}
+                  				},
+                  				plugins: {
+                  					title: {
+                  						display: true,
+                  						text: '各相機照片數量'
+                  					}
+                  				}
+                  			}
+                  		});
+                     }
+                  });
+               </script>			
+            </div>
+         </div>
+      </div>
+      <script>
+         const location_keys = __KEYS_JSON__;
+         const camera_models = __CAMERAS_JSON__;
+         const locations_data = __LOCATIONS_JSON__;
+         const locations = locations_data.map(row => {
+             const obj = {};
+             location_keys.forEach((key, index) => {
+                 if (key === 'camera_model') {
+                     if (row[index] !== null) {
+                         obj[key] = camera_models[row[index]];
+                     } else {
+                         obj[key] = null;
+                     }
+                 } else {
+                     obj[key] = row[index];
+                 }
+             });
+             return obj;
+         });
+         let last_known_lat = null;
+         let last_known_lon = null;
+         let earliest_photo_with_gps_date = null;
+         // Find the date of the earliest photo that has GPS data.
+         // Since locations is sorted by date_taken, the first one we find is the earliest.
+         for (let i = 0; i < locations.length; i++) {
+             if (locations[i].gps_latitude !== null && locations[i].gps_longitude !== null) {
+                 earliest_photo_with_gps_date = locations[i].date_taken;
+                 break;
+             }
+         }
+         locations.forEach(loc => {
+             if (loc.gps_latitude !== null && loc.gps_longitude !== null) {
+                 loc.has_native_gps = true;
+                 last_known_lat = loc.gps_latitude;
+                 last_known_lon = loc.gps_longitude;
+             } else {
+                 loc.has_native_gps = false;
+                 // If this photo's date is before the earliest photo with GPS, send it to Nemo.
+                 if (earliest_photo_with_gps_date && loc.date_taken && loc.date_taken < earliest_photo_with_gps_date) {
+                     loc.gps_latitude = -48.876667;
+                     loc.gps_longitude = -123.393333;
+                 } else if (last_known_lat !== null) { // Otherwise, use the last known location.
+                     loc.gps_latitude = last_known_lat;
+                     loc.gps_longitude = last_known_lon;
+                 }
+             }
+         });
+         let current_cluster_photos = [];
+         let current_cluster_videos = [];
+         let current_photo_grid_page = 0;
+         let current_video_grid_page = 0;
+         let filtered_locations = locations;
+         let is_default_view = true;
+         function populateYearFilter() {
+             const yearSelect = document.getElementById('year-select');
+             const years = new Set();
+             locations.forEach(loc => {
+                 if (loc.date_taken) {
+                     years.add(loc.date_taken.substring(0, 4));
+                 }
+             });
+             yearSelect.innerHTML = '<option value="all">All</option>';
+             Array.from(years).sort().reverse().forEach(year => {
+                 const option = document.createElement('option');
+                 option.value = year;
+                 option.textContent = year;
+                 yearSelect.appendChild(option);
+             });
+         }
+         function populateCameraFilter() {
+             const cameraSelect = document.getElementById('camera-select');
+             cameraSelect.innerHTML = '<option value="all">All</option>';
+             camera_models.forEach(model => {
+                 const option = document.createElement('option');
+                 option.value = model;
+                 option.textContent = model;
+                 cameraSelect.appendChild(option);
+             });
+         }
+         if (locations.length === 0) {
+             alert("資料庫中沒有找到含有 GPS 座標的照片。");
+         } else {
+             const first_location_with_gps = locations.find(loc => loc.gps_latitude !== null && loc.gps_longitude !== null);
+             let initial_coords = [0, 0]; // Default coordinates
+             if (first_location_with_gps) {
+                 initial_coords = [first_location_with_gps.gps_latitude, first_location_with_gps.gps_longitude];
+             } else {
+                 alert("Warning: No photos with GPS data found. Map will be centered at [0, 0].");
+             }
+             const map = L.map('map').setView(initial_coords, 13);
+             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+             }).addTo(map);
+             const markers = L.markerClusterGroup({ zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false });
+             let all_markers = [];
+             function openTab(evt, tabName) {
+                 var i, tabcontent, tablinks;
+                 tabcontent = document.getElementsByClassName("tabcontent");
+                 for (i = 0; i < tabcontent.length; i++) {
+                     tabcontent[i].style.display = "none";
+                 }
+                 tablinks = document.getElementsByClassName("tablinks");
+                 for (i = 0; i < tablinks.length; i++) {
+                     tablinks[i].className = tablinks[i].className.replace(" active", "");
+                 }
+                 document.getElementById(tabName).style.display = "block";
+                 if (evt) {
+                     evt.currentTarget.className += " active";
+                 }
+             }
+             function updateSidebar(photo, all_media, current_index_in_cluster) {
+                 const singleView = document.getElementById('single-view');
+                 const current_date_index = filtered_locations.findIndex(p => p.file_path_web === photo.file_path_web);
+                 const formatted_date = photo.date_taken || 'N/A';
+                 let navigationHTML = `
+                     <div style="display: flex; justify-content: flex-start; align-items: center; margin-bottom: 10px;">
+                         <button onclick="navigate_date(${current_date_index - 1})">時間上一張</button>
+                         <button onclick="navigate_date(${current_date_index + 1})">時間下一張</button>
+                         <button ${all_media.length <= 1 ? 'disabled' : ''} onclick="navigate_cluster(${current_index_in_cluster - 1})">上一張</button>
+                         <button ${all_media.length <= 1 ? 'disabled' : ''} onclick="navigate_cluster(${current_index_in_cluster + 1})">下一張</button>
+                         ${all_media.length > 1 ? `<span style="user-select: none; margin-left: 10px;">${current_index_in_cluster + 1} / ${all_media.length}</span>` : ''}
+                     </div>
+                 `;
+                 let mediaHTML = '';
+                 const filePathLower = photo.file_path_web.toLowerCase();
+                 if (filePathLower.endsWith('.mp4') || filePathLower.endsWith('.mov')) {
+                     mediaHTML = `<video src="file:///${photo.file_path_web}" controls style="width: 100%; height: auto; max-height: 70vh;"></video>`;
+                 } else {
+                     mediaHTML = `<img src="file:///${photo.file_path_web}" alt="Photo thumbnail" style="width: 100%; height: auto; max-height: 70vh;">`;
+                 }
+                 singleView.innerHTML = navigationHTML + `
+                     <b>相機:</b> ${photo.camera_model || 'N/A'}<br>
+                     <b>日期:</b> ${formatted_date}<br>
+                     <b>座標:</b> ${photo.gps_latitude}, ${photo.gps_longitude}(${photo.has_native_gps ? '原生' : '賦予'})<br>
+                     <b>路徑:</b> ${photo.file_path_web}<br>
+                     ${mediaHTML}<br>
+                 `;
+                 renderGrid('photo');
+                 renderGrid('video');
+                 if (document.getElementById('sidebar').offsetWidth === 0) {
+                     document.getElementById('sidebar').style.width = '800px';
+                     openTab(null, 'single-view');
+                 }
+                 if (photo.gps_latitude !== null && photo.gps_longitude !== null) {
+                     map.panTo(new L.LatLng(photo.gps_latitude, photo.gps_longitude), {animate: false});
+                 }
+                 map.invalidateSize();
+             }
+             function renderGrid(mediaType) {
+                 const is_photo = mediaType === 'photo';
+                 const grid_data = is_photo ? current_cluster_photos : current_cluster_videos;
+                 let current_page = is_photo ? current_photo_grid_page : current_video_grid_page;
+                 const rows = document.getElementById(is_photo ? 'grid-rows' : 'video-grid-rows').value;
+                 const cols = document.getElementById(is_photo ? 'grid-cols' : 'video-grid-cols').value;
+                 const items_per_page = rows * cols;
+                 const gridContainer = document.getElementById(is_photo ? 'photo-grid-container' : 'video-grid-container');
+                 const gridPagination = document.getElementById(is_photo ? 'photo-grid-pagination' : 'video-grid-pagination');
+                 gridContainer.innerHTML = '';
+                 gridPagination.innerHTML = '';
+                 gridContainer.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+                 const start_index = current_page * items_per_page;
+                 const end_index = start_index + items_per_page;
+                 const items_to_display = grid_data.slice(start_index, end_index);
+                 items_to_display.forEach(item => {
+                     const filePathLower = item.file_path_web.toLowerCase();
+                     let mediaElement;
+                     if (filePathLower.endsWith('.mp4') || filePathLower.endsWith('.mov')) {
+                         mediaElement = document.createElement('video');
+                         mediaElement.src = `file:///${item.file_path_web}`;
+                         mediaElement.controls = false;
+                         mediaElement.muted = true;
+                         mediaElement.loop = true;
+                         mediaElement.preload = "metadata";
+                         mediaElement.style.objectFit = "cover";
+                         // Check if play-all-videos-checkbox is checked
+                         if (document.getElementById('play-all-videos-checkbox').checked) {
+                             mediaElement.play();
+                         } else {
+                             mediaElement.addEventListener('mouseenter', () => mediaElement.play());
+                             mediaElement.addEventListener('mouseleave', () => mediaElement.pause());
+                         }
+                     } else {
+                         mediaElement = document.createElement('img');
+                         mediaElement.src = `file:///${item.file_path_web}`;
+                         mediaElement.alt = "Media thumbnail";
+                         mediaElement.style.objectFit = "cover";
+                     }
+                     mediaElement.style.width = "100%";
+                     mediaElement.style.height = "100%";
+                     mediaElement.style.cursor = "pointer";
+                     mediaElement.onclick = function() {
+                         const all_media = [].concat(current_cluster_photos, current_cluster_videos);
+                         const index = all_media.findIndex(p => p.file_path_web === item.file_path_web);
+                         updateSidebar(item, all_media, index);
+                         openTab({currentTarget: document.getElementsByClassName('tablinks')[0]}, 'single-view');
+                     };
+                     gridContainer.appendChild(mediaElement);
+                 });
+                 const num_pages = Math.ceil(grid_data.length / items_per_page);
+                 if (num_pages > 1) {
+                     let prev_page = current_page - 1;
+                     if (prev_page < 0) prev_page = num_pages - 1;
+                     let next_page = current_page + 1;
+                     if (next_page >= num_pages) next_page = 0;
+                     let paginationHTML = '';
+                     paginationHTML += `<button onclick="changeGridPage('${mediaType}', ${prev_page})"> &lt;&lt; </button>`;
+                     paginationHTML += `<button onclick="changeGridPage('${mediaType}', ${next_page})"> &gt;&gt; </button>`;
+                     paginationHTML += `<span>Page ${current_page + 1} of ${num_pages}</span>`;
+                     paginationHTML += `<input type="number" id="${mediaType}-page-input" min="1" max="${num_pages}" style="width: 50px;">`;
+                     paginationHTML += `<button onclick="goToPage('${mediaType}')">Go</button>`;
+                     gridPagination.innerHTML = paginationHTML;
+                 } else {
+                     gridPagination.innerHTML = '';
+                 }
+             }
+             window.goToPage = function(mediaType) {
+                 const pageInput = document.getElementById(`${mediaType}-page-input`);
+                 let page = parseInt(pageInput.value, 10) - 1;
+                 const is_photo = mediaType === 'photo';
+                 const grid_data = is_photo ? current_cluster_photos : current_cluster_videos;
+                 const rows = document.getElementById(is_photo ? 'grid-rows' : 'video-grid-rows').value;
+                 const cols = document.getElementById(is_photo ? 'grid-cols' : 'video-grid-cols').value;
+                 const items_per_page = rows * cols;
+                 const num_pages = Math.ceil(grid_data.length / items_per_page);
+         
+                 if (page >= 0 && page < num_pages) {
+                     if (mediaType === 'photo') {
+                         current_photo_grid_page = page;
+                     } else {
+                         current_video_grid_page = page;
+                     }
+                     renderGrid(mediaType);
+                 } else {
+                     alert(`Invalid page number. Please enter a number between 1 and ${num_pages}.`);
+                 }
+             }
+         
+             window.changeGridPage = function(mediaType, page) {
+                 page = parseInt(page, 10);
+                 if (mediaType === 'photo') {
+                     current_photo_grid_page = page;
+                 } else {
+                     current_video_grid_page = page;
+                 }
+                 renderGrid(mediaType);
+             }
+             window.changeGridSize = function() {
+                 current_photo_grid_page = 0;
+                 renderGrid('photo');
+             }
+             window.changeVideoGridSize = function() {
+                 current_video_grid_page = 0;
+                 renderGrid('video');
+             }
+             window.togglePlayAllVideos = function() {
+                 const playAll = document.getElementById('play-all-videos-checkbox').checked;
+                 const videoElements = document.querySelectorAll('#video-grid-container video');
+                 videoElements.forEach(video => {
+                     if (playAll) {
+                         video.play();
+                     } else {
+                         video.pause();
+                     }
+                 });
+             };
+             window.navigate_cluster = function(next_index) {
+                 const all_media = [].concat(current_cluster_photos, current_cluster_videos);
+                 if (next_index < 0) {
+                     next_index = all_media.length - 1;
+                 } else if (next_index >= all_media.length) {
+                     next_index = 0;
+                 }
+                 const next_photo = all_media[next_index];
+                 map.panTo(new L.LatLng(next_photo.gps_latitude, next_photo.gps_longitude));
+                 updateSidebar(next_photo, all_media, next_index);
+             }
+             window.navigate_date = function(next_index) {
+                 if (next_index < 0) {
+                     next_index = filtered_locations.length - 1;
+                 } else if (next_index >= filtered_locations.length) {
+                     next_index = 0;
+                 }
+                 const next_photo = filtered_locations[next_index];
+                 const photos_at_coord = all_markers.filter(m => {
+                     const lat_diff = Math.abs(m.getLatLng().lat - next_photo.gps_latitude);
+                     const lon_diff = Math.abs(m.getLatLng().lng - next_photo.gps_longitude);
+                     return lat_diff < 0.000001 && lon_diff < 0.000001;
+                 });
+                 const all_media_at_coord = photos_at_coord.map(m => m.photo);
+                 all_media_at_coord.sort((a, b) => {
+                     const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                     const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                     if (dateA && dateB) return dateB - dateA;
+                     if (dateA) return -1;
+                     if (dateB) return 1;
+                     return 0;
+                 });
+                 // Separate into photos and videos
+                 current_cluster_photos = all_media_at_coord.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                 current_cluster_videos = all_media_at_coord.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                 const current_index_in_cluster = all_media_at_coord.findIndex(p => p.file_path_web === next_photo.file_path_web);
+                 updateSidebar(next_photo, all_media_at_coord, current_index_in_cluster);
+             }
+             function updateMapMarkers(locations_to_show) {
+                 markers.clearLayers();
+                 all_markers = [];
+                 locations_to_show.forEach(loc => {
+                     // Skip photos that still don't have a location (i.e., those from the start of the timeline)
+                     if (loc.gps_latitude === null || loc.gps_longitude === null) {
+                         return;
+                     }
+                     const marker = L.marker([loc.gps_latitude, loc.gps_longitude]);
+                     marker.photo = loc;
+                     all_markers.push(marker);
+                     markers.addLayer(marker);
+                 });
+                 if (markers.getBounds().isValid()) {
+                     map.fitBounds(markers.getBounds());
+                 }
+             }
+             // Use event delegation for marker clicks for much better performance
+             markers.on('click', function(e) {
+                 const clicked_marker = e.layer;
+                 const photos_at_coord = all_markers.filter(m => {
+                     const lat_diff = Math.abs(m.getLatLng().lat - clicked_marker.getLatLng().lat);
+                     const lon_diff = Math.abs(m.getLatLng().lng - clicked_marker.getLatLng().lng);
+                     return lat_diff < 0.000001 && lon_diff < 0.000001;
+                 });
+                 const all_media_at_coord = photos_at_coord.map(m => m.photo);
+                 all_media_at_coord.sort((a, b) => {
+                     const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                     const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                     if (dateA && dateB) return dateB - dateA;
+                     if (dateA) return -1;
+                     if (dateB) return 1;
+                     return 0;
+                 });
+                 // Separate into photos and videos
+                 current_cluster_photos = all_media_at_coord.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                 current_cluster_videos = all_media_at_coord.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                 current_photo_grid_page = 0;
+                 current_video_grid_page = 0;
+                 const index = all_media_at_coord.findIndex(p => p.file_path_web === clicked_marker.photo.file_path_web);
+                 updateSidebar(clicked_marker.photo, all_media_at_coord, index);
+             });
+             populateYearFilter();
+             populateCameraFilter();
+             updateMapMarkers(locations);
+             document.getElementById('filter-button').addEventListener('click', function() {
+                 const year = document.getElementById('year-select').value;
+                 const month = document.getElementById('month-select').value;
+                 const day = document.getElementById('day-select').value;
+                 const camera = document.getElementById('camera-select').value;
+                 const show_assigned_gps = document.getElementById('show-assigned-gps-checkbox').checked;
+                 const startDate = document.getElementById('start-date').value;
+                 const endDate = document.getElementById('end-date').value;
+         
+                 const start = startDate ? new Date(startDate) : null;
+                 const end = endDate ? new Date(endDate) : null;
+                 if (start) start.setHours(0, 0, 0, 0);
+                 if (end) end.setHours(23, 59, 59, 999);
+         
+                 const is_now_default = (year === 'all' && month === 'all' && day === 'all' && camera === 'all' && show_assigned_gps && !startDate && !endDate);
+                 if (is_now_default) {
+                     if (!is_default_view) {
+                         // If we are returning to the default view, reload the page.
+                         location.reload();
+                     }
+                     // If we are already in the default view, do nothing.
+                     return;
+                 }
+                 // If we are applying any other filter, mark that we are no longer in the default view.
+                 is_default_view = false;
+                 let temp_locations = locations;
+                 // Filter by date
+                 const is_date_filtered = !(year === 'all' && month === 'all' && day === 'all');
+                 if (is_date_filtered) {
+                     temp_locations = temp_locations.filter(loc => {
+                         if (!loc.date_taken) return false;
+                         const photo_year = loc.date_taken.substring(0, 4);
+                         const photo_month = loc.date_taken.substring(5, 7);
+                         const photo_day = loc.date_taken.substring(8, 10);
+                         const year_match = (year === 'all' || photo_year === year);
+                         const month_match = (month === 'all' || photo_month === month);
+                         const day_match = (day === 'all' || photo_day === day);
+                         return year_match && month_match && day_match;
+                     });
+                 }
+         
+                 // Filter by date range
+                 if (start || end) {
+                     temp_locations = temp_locations.filter(loc => {
+                         if (!loc.date_taken) return false;
+                         const date = new Date(loc.date_taken);
+                         return (!start || date >= start) && (!end || date <= end);
+                     });
+                 }
+         
+                 // Filter by camera
+                 if (camera !== 'all') {
+                     temp_locations = temp_locations.filter(loc => loc.camera_model === camera);
+                 }
+                 // Filter by GPS status
+                 if (!show_assigned_gps) {
+                     temp_locations = temp_locations.filter(loc => loc.has_native_gps);
+                 }
+                 filtered_locations = temp_locations;
+                 updateMapMarkers(filtered_locations);
+             });
+             markers.on('clusterclick', function (a) {
+                 const cluster_markers = a.layer.getAllChildMarkers();
+                 let all_media_in_cluster = cluster_markers.map(m => m.photo);
+                 all_media_in_cluster.sort((a, b) => {
+                     const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                     const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                     if (dateA && dateB) return dateB - dateA;
+                     if (dateA) return -1;
+                     if (dateB) return 1;
+                     return 0;
+                 });
+                 // Separate into photos and videos
+                 current_cluster_photos = all_media_in_cluster.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                 current_cluster_videos = all_media_in_cluster.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                 current_photo_grid_page = 0;
+                 current_video_grid_page = 0;
+                 updateSidebar(all_media_in_cluster[0], all_media_in_cluster, 0);
+             });
+             markers.on('clusterdblclick', function (a) {
+                 a.layer.zoomToBounds();
+             });
+             map.addLayer(markers);
+             if (markers.getBounds().isValid()) {
+                 map.fitBounds(markers.getBounds());
+             }
+             setTimeout(function() {
+                 map.invalidateSize();
+             }, 100);
+             // Set default tab
+             openTab({currentTarget: document.getElementsByClassName('tablinks')[0]}, 'single-view');
+             // Resizer logic
+             const resizer = document.getElementById('resizer');
+             const sidebar = document.getElementById('sidebar');
+             const mapContainer = document.getElementById('map');
+             resizer.addEventListener('mousedown', function(e) {
+                 e.preventDefault();
+                 document.addEventListener('mousemove', mouseMoveHandler);
+                 document.addEventListener('mouseup', mouseUpHandler);
+             });
+             function mouseMoveHandler(e) {
+                 const newWidth = window.innerWidth - e.clientX;
+                 if (newWidth > 10 && newWidth < window.innerWidth - 200) { // Min and max width
+                     sidebar.style.width = newWidth + 'px';
+                 }
+             }
+             function mouseUpHandler() {
+                 document.removeEventListener('mousemove', mouseMoveHandler);
+                 document.removeEventListener('mouseup', mouseUpHandler);
+                 map.invalidateSize();
+             }
+         }
+      </script>
+   </body>
+</html>
