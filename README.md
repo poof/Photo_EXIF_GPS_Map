@@ -48,3 +48,66 @@
 ## 資料庫結構
 
 資料庫檔案位於 `data/photo_exif.db`，結構與開發版相同。
+
+## 致謝
+
+本專案使用 OpenStreetMap 圖資，感謝其對開源地圖的貢獻。
+
+---
+
+# Photo EXIF Map (Release)
+
+This project is a Photo EXIF and GPS Data Extractor and Map Visualizer.
+
+It scans a directory of photos and videos, extracts their EXIF metadata (such as camera model, date taken, and GPS coordinates), and stores this information in a SQLite database. It then generates an interactive HTML map to visualize the locations where the photos were taken.
+
+## Features
+
+*   **Recursive Scanning:** Scans all image files (JPEG, TIFF, HEIC, PNG, and various RAW formats) and video files (.mp4, .mov) in the specified folder.
+*   **Smart Scan:** When scanning again, it automatically skips files that already exist in the database and only processes new files.
+*   **EXIF Extraction:** Captures EXIF information from photos or the file modification date of videos as the shooting date.
+*   **Database Storage:** Saves the captured information into a SQLite database.
+*   **Interactive Menu:** Provides an integrated menu for scanning, searching, map generation, and other functions.
+
+## How to Use
+
+1.  **Install Dependencies:**
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Run the Main Script:**
+
+    ```bash
+    python photo_manager.py
+    ```
+
+    The script will display a menu, and you can choose the operation to perform based on the prompts:
+    *   **1. Scan Media Folder**: Add new photos and videos to the database.
+    *   **2. Interactive Database Search**: Query data based on camera, date, ISO, and other criteria.
+    *   **3. Generate HTML Map**: Generate an `output/photo_map.html` file based on the content in the database.
+
+## Generate Photo Map
+
+You can generate an interactive map through option `3` in the main menu.
+
+### Map Features
+
+*   **Interactive Map:** Photos and videos are displayed on the map as clustered points.
+*   **Filtering:**
+    *   You can filter media by **year**, **month**, **day**, and **camera model**.
+    *   **Show photos without location:** Filter media with or without native GPS coordinates.
+*   **Sidebar:**
+    *   **Freely adjustable width**.
+    *   **Single View:** Displays a photo preview or video player and detailed information.
+    *   **Photo Wall/Video Wall:** Displays photos or videos in a grid format, with video hover-to-preview support.
+    *   **Heatmap/Statistics:** Provides visual data analysis charts.
+
+## Database Structure
+
+The database file is located at `data/photo_exif.db`, and its structure is the same as the development version.
+
+## Acknowledgments
+
+This project utilizes OpenStreetMap data, and we are grateful for their invaluable contribution to open-source mapping.
