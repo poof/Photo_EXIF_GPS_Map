@@ -4,6 +4,8 @@
 
 本專案旨在掃描指定資料夾中的所有照片與影片，擷取其 EXIF 或中繼資料，並將其儲存到 SQLite 資料庫中。此版本為單一整合腳本，方便部署與執行。
 
+https://void.ics.app/?p=373
+
 ## 功能
 
 *   遞迴掃描指定資料夾中的所有圖片檔案 (JPEG, TIFF, HEIC, PNG, and various RAW formats) 與影片檔案 (.mp4, .mov)。
@@ -62,6 +64,8 @@
 This project is a Photo EXIF and GPS Data Extractor and Map Visualizer.
 
 It scans a directory of photos and videos, extracts their EXIF metadata (such as camera model, date taken, and GPS coordinates), and stores this information in a SQLite database. It then generates an interactive HTML map to visualize the locations where the photos were taken.
+
+https://void.ics.app/?p=373
 
 ## Features
 
