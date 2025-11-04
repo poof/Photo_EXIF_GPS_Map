@@ -175,9 +175,28 @@ class ExifExtractor:
 
 class DatabaseHandler:
     """Manages the connection and operations for the EXIF data database."""
-    def __init__(self, db_name):
+    def __init__(self, db_name, buffer_size=100):
         self.db_name = db_name
         self.conn = None
+        self.buffer = []
+        self.buffer_size = buffer_size
+
+    def flush_buffer(self):
+        if not self.conn:
+            self.create_connection()
+        if not self.conn or not self.buffer:
+            return
+
+        sql = ''' INSERT OR IGNORE INTO exif_data(date_taken,file_path,camera_model,gps_latitude,gps_longitude,gps_altitude,iso,aperture,shutter_speed,focal_length)
+                  VALUES(?,?,?,?,?,?,?,?,?,?) '''
+        try:
+            cur = self.conn.cursor()
+            data_to_insert = [list(item.values()) for item in self.buffer]
+            cur.executemany(sql, data_to_insert)
+            self.conn.commit()
+            self.buffer = []
+        except Exception as e:
+            print(f"Error flushing buffer: {e}")
 
     def create_connection(self):
         try:
@@ -216,22 +235,9 @@ class DatabaseHandler:
             print(e)
 
     def insert_exif_data(self, exif_data):
-        if not self.conn:
-            self.create_connection()
-        if not self.conn: return
-
-        sql = ''' INSERT OR IGNORE INTO exif_data(date_taken,file_path,camera_model,gps_latitude,gps_longitude,gps_altitude,iso,aperture,shutter_speed,focal_length)
-                  VALUES(?,?,?,?,?,?,?,?,?,?) '''
-        try:
-            cur = self.conn.cursor()
-            cur.execute(sql, list(exif_data.values()))
-            self.conn.commit()
-            return cur.lastrowid
-        except sqlite3.IntegrityError:
-            return None
-        except Exception as e:
-            print(f"Error inserting data: {e}")
-            return None
+        self.buffer.append(exif_data)
+        if len(self.buffer) >= self.buffer_size:
+            self.flush_buffer()
 
     def get_photos(self, start_date=None, end_date=None):
         self.create_connection()
@@ -320,7 +326,7 @@ class PhotoScanner:
     """Manages the workflow of scanning a directory and populating the database."""
     def __init__(self, db_path):
         self.db_path = db_path
-        self.db_handler = DatabaseHandler(self.db_path)
+        self.db_handler = DatabaseHandler(self.db_path, buffer_size=500)
         self.db_handler.create_table()
 
     def _get_files_to_process(self, media_directories):
@@ -367,6 +373,8 @@ class PhotoScanner:
                             processed_count += 1
                     pbar.update(1)
 
+        self.db_handler.flush_buffer()
+
         print(f"\n--- Processing Summary ---")
         print(f"New media files processed and saved: {processed_count}")
         print(f"New images without full EXIF data (using modification time): {no_exif_count}")
@@ -397,6 +405,8 @@ class PhotoScanner:
                         self.db_handler.insert_exif_data(result['data'])
                         processed_count += 1
                 pbar.update(1)
+
+        self.db_handler.flush_buffer()
 
         print(f"\n--- Processing Summary ---")
         print(f"New media files processed and saved: {processed_count}")
