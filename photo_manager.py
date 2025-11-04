@@ -323,7 +323,7 @@ class PhotoScanner:
         self.db_handler = DatabaseHandler(self.db_path)
         self.db_handler.create_table()
 
-    def scan_directories(self, media_directories):
+    def _get_files_to_process(self, media_directories):
         print(f"Scanning directories: {', '.join(media_directories)}")
         
         all_files_on_disk = []
@@ -338,6 +338,11 @@ class PhotoScanner:
         
         print(f"Total media files found on disk: {len(all_files_on_disk)}.")
         print(f"{len(files_to_process)} new media files will be processed.")
+        
+        return files_to_process
+
+    def scan_directories_multiprocess(self, media_directories):
+        files_to_process = self._get_files_to_process(media_directories)
 
         if not files_to_process:
             print("No new media to add to the database.")
@@ -347,9 +352,8 @@ class PhotoScanner:
         error_count = 0
         processed_count = 0
 
-        # Use context manager for the pool
         with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
-            with tqdm(total=len(files_to_process), unit="file", desc="Processing new files") as pbar:
+            with tqdm(total=len(files_to_process), unit="file", desc="Processing new files (Multiprocess)") as pbar:
                 for result in pool.imap_unordered(process_file, files_to_process):
                     if result:
                         if result.get('error'):
@@ -362,6 +366,37 @@ class PhotoScanner:
                             self.db_handler.insert_exif_data(result['data'])
                             processed_count += 1
                     pbar.update(1)
+
+        print(f"\n--- Processing Summary ---")
+        print(f"New media files processed and saved: {processed_count}")
+        print(f"New images without full EXIF data (using modification time): {no_exif_count}")
+        print(f"New media files with processing errors: {error_count}")
+
+    def scan_directories_single_thread(self, media_directories):
+        files_to_process = self._get_files_to_process(media_directories)
+
+        if not files_to_process:
+            print("No new media to add to the database.")
+            return
+
+        no_exif_count = 0
+        error_count = 0
+        processed_count = 0
+
+        with tqdm(total=len(files_to_process), unit="file", desc="Processing new files (Single-thread)") as pbar:
+            for file_path in files_to_process:
+                result = process_file(file_path)
+                if result:
+                    if result.get('error'):
+                        error_count += 1
+                    elif result.get('no_exif'):
+                        no_exif_count += 1
+                        self.db_handler.insert_exif_data(result['data'])
+                        processed_count += 1
+                    elif 'data' in result:
+                        self.db_handler.insert_exif_data(result['data'])
+                        processed_count += 1
+                pbar.update(1)
 
         print(f"\n--- Processing Summary ---")
         print(f"New media files processed and saved: {processed_count}")
@@ -396,6 +431,10 @@ class MapGenerator:
                 loc['gps_latitude'] = round(loc['gps_latitude'], 6)
             if loc.get('gps_longitude') is not None:
                 loc['gps_longitude'] = round(loc['gps_longitude'], 6)
+
+            if loc.get('gps_latitude') == 0.0 and loc.get('gps_longitude') == 0.0:
+                loc['gps_latitude'] = None
+                loc['gps_longitude'] = None
             
             loc['file_path_web'] = loc['file_path'].replace('\\', '/')
             
@@ -424,8 +463,6 @@ class MapGenerator:
         html_content = html_content.replace('__LOCATIONS_JSON__', locations_json)
         return html_content
 
-
-
     def run(self):
         """Executes the map generation process."""
         if not self.locations:
@@ -435,7 +472,6 @@ class MapGenerator:
         print(f"Found {len(self.locations)} records, generating HTML map file...")
         html_content = self._generate_html()
 
-        # Generate and inject heatmap
         try:
             conn = sqlite3.connect(self.db_name)
             cursor = conn.cursor()
@@ -457,8 +493,6 @@ class MapGenerator:
             html_content = html_content.replace('__HEATMAPS__', heatmaps_html)
             html_content = html_content.replace('__PHOTO_COUNTS_JSON__', photo_counts_json)
             html_content = html_content.replace('__YEARS_JSON__', json.dumps(years))
-
-
 
         except Exception as e:
             print(f"Error generating heatmap: {e}")
@@ -577,7 +611,6 @@ class InteractiveSearch:
         self._execute_query(query)
 
     def run(self):
-        # Check for pandas
         try:
             import pandas as pd
         except ImportError:
@@ -614,7 +647,7 @@ class InteractiveSearch:
 # 6. MAIN EXECUTION AND MENU
 # ==============================================================================
 
-def do_scan(db_path):
+def do_scan(db_path, multiprocess=True):
     dir_paths_str = input("Enter one or more absolute paths to media directories, separated by commas: ")
     dir_paths = [path.strip() for path in dir_paths_str.split(',')]
 
@@ -630,10 +663,13 @@ def do_scan(db_path):
         return
         
     scanner = PhotoScanner(db_path)
-    scanner.scan_directories(valid_paths)
+    if multiprocess:
+        scanner.scan_directories_multiprocess(valid_paths)
+    else:
+        scanner.scan_directories_single_thread(valid_paths)
 
 def do_generate_map(db_path, template_path, output_path):
-    print("\n--- Generate HTML Map ---")
+    print(f"\n--- Generate HTML Map from template: {os.path.basename(template_path)} ---")
     start_date = input("Enter start date (YYYY-MM-DD) or leave blank for all: ")
     end_date = input("Enter end date (YYYY-MM-DD) or leave blank for all: ")
     
@@ -679,33 +715,40 @@ def do_generate_map_non_interactive(db_path, template_path, output_path):
 def main_menu():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(script_dir, 'data', 'photo_exif.db')
-    template_path = os.path.join(script_dir, 'web', 'map_template.html')
     output_path = os.path.join(script_dir, 'output', 'photo_map.html')
-
+    template_path_en = os.path.join(script_dir, 'web', 'map_template_en-US.html')
+    template_path_zh = os.path.join(script_dir, 'web', 'map_template_zh-TW.html')
+    
     os.makedirs(os.path.join(script_dir, 'data'), exist_ok=True)
     os.makedirs(os.path.join(script_dir, 'output'), exist_ok=True)
     os.makedirs(os.path.join(script_dir, 'web'), exist_ok=True)
 
     if '--generate-map-all' in sys.argv:
-        do_generate_map_non_interactive(db_path, template_path, output_path)
+        do_generate_map_non_interactive(db_path, template_path_en, output_path) # Default to English
         return
 
     while True:
         print("\n======= Photo Manager ========")
-        print("1. Scan Media Directories (Add photos/videos to DB)")
-        print("2. Search Database (Interactive)")
-        print("3. Generate HTML Map")
-        print("4. Exit")
-        choice = input("Enter your choice [1-4]: ")
+        print("1. Scan Media Directories (Multiprocess)")
+        print("2. Scan Media Directories (Single-thread)")
+        print("3. Search Database (Interactive)")
+        print("4. Generate HTML Map (en-US)")
+        print("5. Generate HTML Map (zh-TW)")
+        print("6. Exit")
+        choice = input("Enter your choice [1-6]: ")
 
         if choice == '1':
-            do_scan(db_path)
+            do_scan(db_path, multiprocess=True)
         elif choice == '2':
+            do_scan(db_path, multiprocess=False)
+        elif choice == '3':
             searcher = InteractiveSearch(db_path)
             searcher.run()
-        elif choice == '3':
-            do_generate_map(db_path, template_path, output_path)
         elif choice == '4':
+            do_generate_map(db_path, template_path_en, output_path)
+        elif choice == '5':
+            do_generate_map(db_path, template_path_zh, output_path)
+        elif choice == '6':
             print("Exiting.")
             break
         else:
