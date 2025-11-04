@@ -1,5 +1,6 @@
-<img width="2048" height="1043" alt="image" src="https://github.com/user-attachments/assets/42a77dd6-a763-45b1-bf10-816eeb38764e" /># 照片 EXIF 資訊擷取專案 (Release)
-![Uploading image.png…]()
+<img width="2048" height="1043" alt="image" src="https://github.com/user-attachments/assets/42a77dd6-a763-45b1-bf10-816eeb38764e" />
+# 照片 EXIF 資訊擷取專案 (Release)
+
 
 本專案旨在掃描指定資料夾中的所有照片與影片，擷取其 EXIF 或中繼資料，並將其儲存到 SQLite 資料庫中。此版本為單一整合腳本，方便部署與執行。
 
