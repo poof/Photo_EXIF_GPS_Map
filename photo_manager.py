@@ -287,6 +287,39 @@ class DatabaseHandler:
         finally:
             self.close_connection()
 
+    def clean_db(self):
+        self.create_connection()
+        if not self.conn:
+            return
+
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT id, file_path FROM exif_data")
+            records = cursor.fetchall()
+            
+            print(f"Checking {len(records)} records from the database...")
+            non_existent_ids = []
+            for record_id, file_path in tqdm(records, desc="Scanning for missing files", unit=" record"):
+                if not os.path.exists(file_path):
+                    non_existent_ids.append((record_id,))
+            
+            if non_existent_ids:
+                print(f"\nFound {len(non_existent_ids)} non-existent photo records to delete.")
+                confirm = input("Proceed with deletion? (y/n): ")
+                if confirm.lower() == 'y':
+                    cursor.executemany("DELETE FROM exif_data WHERE id = ?", non_existent_ids)
+                    self.conn.commit()
+                    print(f"Successfully deleted {len(non_existent_ids)} records.")
+                else:
+                    print("Deletion cancelled.")
+            else:
+                print("\nDatabase is clean. No non-existent photo records found.")
+
+        except Exception as e:
+            print(f"An error occurred during database cleaning: {e}")
+        finally:
+            self.close_connection()
+
 # ==============================================================================
 # 3. PHOTO SCANNING LOGIC (from main.py)
 # ==============================================================================
@@ -722,6 +755,11 @@ def do_generate_map_non_interactive(db_path, template_path, output_path):
     map_gen = MapGenerator(locations, template_path, output_path, db_path)
     map_gen.run()
 
+def do_clean_db(db_path):
+    print("\n--- Clean Database ---")
+    db_handler = DatabaseHandler(db_path)
+    db_handler.clean_db()
+
 def main_menu():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(script_dir, 'data', 'photo_exif.db')
@@ -744,8 +782,9 @@ def main_menu():
         print("3. Search Database (Interactive)")
         print("4. Generate HTML Map (en-US)")
         print("5. Generate HTML Map (zh-TW)")
-        print("6. Exit")
-        choice = input("Enter your choice [1-6]: ")
+        print("6. Clean Database (Delete not found item)")
+        print("7. Exit")
+        choice = input("Enter your choice [1-7]: ")
 
         if choice == '1':
             do_scan(db_path, multiprocess=True)
@@ -759,6 +798,8 @@ def main_menu():
         elif choice == '5':
             do_generate_map(db_path, template_path_zh, output_path)
         elif choice == '6':
+            do_clean_db(db_path)
+        elif choice == '7':
             print("Exiting.")
             break
         else:
