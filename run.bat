@@ -1,0 +1,2 @@
+python photo_manager.py
+pause

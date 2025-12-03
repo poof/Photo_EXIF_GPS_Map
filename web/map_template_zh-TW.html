@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/@popperjs/core@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/cal-heatmap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cal-heatmap@4.2.2/dist/plugins/Tooltip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+		body {
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+			/* Prevent body scrollbars */
+		}
+
+		#container {
+			display: flex;
+			width: 100vw;
+			height: 100vh;
+		}
+
+		#map {
+			flex-grow: 1;
+			/* Map takes remaining space */
+			height: 100%;
+			position: relative;
+			/* For crosshair positioning */
+		}
+
+		#resizer {
+			width: 5px;
+			cursor: col-resize;
+			background-color: #ccc;
+			height: 100%;
+			z-index: 1000;
+			/* Ensure it's on top of the map */
+			flex-shrink: 0;
+			/* Prevent it from shrinking */
+		}
+
+		#sidebar {
+			width: 900px;
+			/* Initial width */
+			height: 100%;
+			background-color: #f2f2f2;
+			overflow-y: auto;
+			flex-shrink: 0;
+			/* Prevent sidebar from shrinking */
+		}
+
+		#sidebar-content {
+			padding: 10px;
+		}
+
+		#sidebar-content img {
+			max-width: 100%;
+			height: auto;
+			max-height: 70vh;
+			object-fit: contain;
+		}
+
+		#crosshair {
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			width: 20px;
+			height: 20px;
+			transform: translate(-50%, -50%);
+			pointer-events: none;
+			z-index: 9999;
+		}
+
+		#crosshair::before, #crosshair::after {
+			content: '';
+			position: absolute;
+			background: red;
+		}
+
+		#crosshair::before {
+			left: 50%;
+			width: 2px;
+			height: 100%;
+			transform: translateX(-50%);
+		}
+
+		#crosshair::after {
+			top: 50%;
+			height: 2px;
+			width: 100%;
+			transform: translateY(-50%);
+		}
+
+		.tab {
+			overflow: hidden;
+			border: 1px solid #ccc;
+			background-color: #f1f1f1;
+		}
+
+		.tab button {
+			background-color: inherit;
+			float: left;
+			border: none;
+			outline: none;
+			cursor: pointer;
+			padding: 14px 16px;
+			transition: 0.3s;
+		}
+
+		.tab button:hover {
+			background-color: #ddd;
+		}
+
+		.tab button.active {
+			background-color: #ccc;
+		}
+
+		.tabcontent {
+			display: none;
+			padding: 6px 12px;
+			border: 1px solid #ccc;
+			border-top: none;
+		}
+
+		.grid-media-container {
+			display: grid;
+			gap: 5px;
+		}
+
+		.grid-media-container img, .grid-media-container video {
+			width: 100%;
+			height: 100%;
+			object-fit: cover;
+			cursor: pointer;
+		}
+
+		#grid-pagination button {
+			margin: 5px;
+		}
+    </style>
+</head>
+<body>
+    <div style="position: absolute; top: 10px; right: 10px; z-index: 1000;">
+        <select id="language-selector" onchange="changeLanguage()">
+            <option value="en-US">English</option>
+            <option value="zh-TW">繁體中文</option>
+            <option value="ja-JP">日本語</option>
+            <option value="de-DE">Deutsch</option>
+            <option value="fr-FR">Français</option>
+            <option value="es-ES">Español</option>
+            <option value="pt-BR">Português</option>
+            <option value="ru-RU">Русский</option>
+        </select>
+    </div>
+    <div id="container">
+        <div id="map">
+            <div id="crosshair"></div>
+        </div>
+        <div id="resizer"></div>
+        <div id="sidebar">
+            <div id="sidebar-content">
+                <div class="tab">
+                    <button class="tablinks" onclick="openTab(event, 'single-view')" data-i18n="singleView">Single View</button>
+                    <button class="tablinks" onclick="openTab(event, 'photo-grid-view')" data-i18n="photoGrid">Photo Grid</button>
+                    <button class="tablinks" onclick="openTab(event, 'video-grid-view')" data-i18n="videoGrid">Video Grid</button>
+                    <button class="tablinks" onclick="openTab(event, 'mixed-grid-view')" data-i18n="mixedGrid">Mixed Grid</button>
+                    <button class="tablinks" onclick="openTab(event, 'heatmap-view')" data-i18n="heatmap">Heatmap</button>
+                    <button class="tablinks" onclick="openTab(event, 'statistics-view')" data-i18n="statistics">Statistics</button>
+                    <button class="tablinks" onclick="openTab(event, 'filter-view')" data-i18n="filter">Filter</button>
+                </div>
+                <div id="single-view" class="tabcontent"></div>
+                <div id="filter-view" class="tabcontent">
+                    <div id="filter-controls">
+                        <div class="filter-group">
+                            <label for="year-select" data-i18n="year">Year:</label>
+                            <select id="year-select">
+                                <option value="all" data-i18n="all">All</option>
+                            </select>
+                            <label for="month-select" data-i18n="month">Month:</label>
+                            <select id="month-select">
+                                <option value="all" data-i18n="all">All</option>
+                                <option value="01">1</option>
+                                <option value="02">2</option>
+                                <option value="03">3</option>
+                                <option value="04">4</option>
+                                <option value="05">5</option>
+                                <option value="06">6</option>
+                                <option value="07">7</option>
+                                <option value="08">8</option>
+                                <option value="09">9</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                            </select>
+                            <label for="day-select" data-i18n="day">Day:</label>
+                            <select id="day-select">
+                                <option value="all" data-i18n="all">All</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="start-date" data-i18n="startDate">Start Date:</label>
+                            <input type="date" id="start-date">
+                            <label for="end-date" data-i18n="endDate">End Date:</label>
+                            <input type="date" id="end-date">
+                        </div>
+                        <div class="filter-group">
+                            <label for="camera-select" data-i18n="cameraModel">Camera Model:</label>
+                            <select id="camera-select">
+                                <option value="all" data-i18n="all">All</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <input type="checkbox" id="show-assigned-gps-checkbox" checked>
+                            <label for="show-assigned-gps-checkbox" data-i18n="showPhotosWithoutGps">Show photos without GPS</label>
+                        </div>
+                        <button id="filter-button" data-i18n="filterBtn">Filter</button>
+                    </div>
+                </div>
+                <div id="photo-grid-view" class="tabcontent">
+                    <div id="grid-controls" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <label for="grid-rows" data-i18n="rows">Rows:</label>
+                            <select id="grid-rows" onchange="changeGridSize()">
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5" selected>5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                                <option value="13">13</option>
+                                <option value="14">14</option>
+                                <option value="15">15</option>
+                                <option value="16">16</option>
+                                <option value="17">17</option>
+                                <option value="18">18</option>
+                                <option value="19">19</option>
+                                <option value="20">20</option>
+                            </select>
+                            <label for="grid-cols" data-i18n="cols">Cols:</label>
+                            <select id="grid-cols" onchange="changeGridSize()">
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5" selected>5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                                <option value="13">13</option>
+                                <option value="14">14</option>
+                                <option value="15">15</option>
+                                <option value="16">16</option>
+                                <option value="17">17</option>
+                                <option value="18">18</option>
+                                <option value="19">19</option>
+                                <option value="20">20</option>
+                            </select>
+                        </div>
+                        <div id="photo-grid-pagination"></div>
+                    </div>
+                    <div id="photo-grid-container" class="grid-media-container"></div>
+                </div>
+                <div id="video-grid-view" class="tabcontent">
+                    <div id="video-grid-controls" style="display: flex; justify-content: space-between; align-items: center;">
+                        <!-- Controls for video grid can be different if needed -->
+                        <div>
+                            <label for="video-grid-rows" data-i18n="rows">Rows:</label>
+                            <select id="video-grid-rows" onchange="changeVideoGridSize()">
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5" selected>5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                            <label for="video-grid-cols" data-i18n="cols">Cols:</label>
+                            <select id="video-grid-cols" onchange="changeVideoGridSize()">
+                                <option value="2">2</option>
+                                <option value="3" selected>3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                            <input type="checkbox" id="play-all-videos-checkbox" onchange="togglePlayAllVideos()">
+                            <label for="play-all-videos-checkbox" data-i18n="playAllVideos">Play all videos simultaneously</label>
+                        </div>
+                        <div id="video-grid-pagination"></div>
+                    </div>
+                    <div id="video-grid-container" class="grid-media-container"></div>
+                </div>
+                <div id="mixed-grid-view" class="tabcontent">
+                    <div id="mixed-grid-controls" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <label for="mixed-grid-rows" data-i18n="rows">Rows:</label>
+                            <select id="mixed-grid-rows" onchange="changeMixedGridSize()">
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5" selected>5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                            <label for="mixed-grid-cols" data-i18n="cols">Cols:</label>
+                            <select id="mixed-grid-cols" onchange="changeMixedGridSize()">
+                                <option value="2">2</option>
+                                <option value="3" selected>3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                            <input type="checkbox" id="play-all-mixed-grid-videos-checkbox" onchange="togglePlayAllMixedGridVideos()">
+                            <label for="play-all-mixed-grid-videos-checkbox" data-i18n="playAllVideos">Play all videos simultaneously</label>
+                        </div>
+                        <div id="mixed-grid-pagination"></div>
+                    </div>
+                    <div id="mixed-grid-container" class="grid-media-container"></div>
+                </div>
+                <div id="heatmap-view" class="tabcontent" style="display: flex; flex-direction: column; align-items: center;">
+                    <script>
+                        // This script will now generate the heatmap data and render the heatmaps
+                        document.addEventListener('DOMContentLoaded', function () {
+                            // Find the heatmap-view tab button
+                            const heatmapTabButton = Array.from(document.querySelectorAll('.tablinks')).find(btn => btn.textContent === 'Heatmap');
+                            // Use a MutationObserver to detect when the heatmap tab is shown
+                            const observer = new MutationObserver((mutations) => {
+                                mutations.forEach((mutation) => {
+                                    if (mutation.attributeName === 'style' && document.getElementById('heatmap-view').style.display === 'block') {
+                                        generateAndRenderHeatmaps();
+                                        observer.disconnect(); // Stop observing once rendered
+                                    }
+                                });
+                            });
+                            observer.observe(document.getElementById('heatmap-view'), { attributes: true });
+                            // Also handle the case where the tab is opened by clicking
+                            if (heatmapTabButton) {
+                                heatmapTabButton.addEventListener('click', function() {
+                                    // Check if heatmaps are already rendered
+                                    if (!document.getElementById('heatmap-view').hasChildNodes()) {
+                                        generateAndRenderHeatmaps();
+                                    }
+                                }, { once: true }); // Only run once
+                            }
+                            function generateAndRenderHeatmaps() {
+                                const dateCounts = {};
+                                locations.forEach(loc => {
+                                    if (loc.date_taken) {
+                                        const date = loc.date_taken.split(' ')[0];
+                                        dateCounts[date] = (dateCounts[date] || 0) + 1;
+                                    }
+                                });
+                                const photo_counts_data = Object.keys(dateCounts).map(date => ({
+                                    date: date,
+                                    count: dateCounts[date]
+                                }));
+                                const years = [...new Set(photo_counts_data.map(d => d.date.substring(0, 4)))].sort().reverse();
+                                const heatmapsContainer = document.getElementById('heatmap-view');
+                                heatmapsContainer.innerHTML = ''; // Clear potential previous content
+                                years.forEach(year => {
+                                    const yearTitle = document.createElement('h3');
+                                    yearTitle.textContent = year;
+                                    document.getElementById('heatmap-view').appendChild(yearTitle);
+                                    const heatmapId = `cal-heatmap-${year}`;
+                                    const heatmapDiv = document.createElement('div');
+                                    heatmapDiv.id = heatmapId;
+                                    heatmapDiv.style.width = '100%';
+                                    heatmapDiv.style.marginBottom = '20px';
+                                    heatmapsContainer.appendChild(heatmapDiv);
+                                    const year_data = photo_counts_data.filter(d => d.date.startsWith(year));
+                                    const cal = new CalHeatmap();
+                                    cal.paint({
+                                        itemSelector: `#${heatmapId}`,
+                                        data: {
+                                            source: year_data,
+                                            x: 'date',
+                                            y: 'count'
+                                        },
+                                        date: {
+                                            start: new Date(`${year}-01-01`)
+                                        },
+                                        range: 12,
+                                        scale: {
+                                            color: {
+                                                scheme: 'Greens',
+                                                type: 'threshold',
+                                                domain: [10, 20, 30, 40]
+                                            }
+                                        },
+                                        domain: {
+                                            type: 'month',
+                                            gutter: 4,
+                                            label: {
+                                                text: 'MMM',
+                                                textAlign: 'start',
+                                                position: 'top'
+                                            }
+                                        },
+                                        subDomain: {
+                                            type: 'day',
+                                            radius: 2,
+                                            width: 11,
+                                            height: 11,
+                                            gutter: 2
+                                        }
+                                    }, [
+                                        [
+                                            Tooltip,
+                                            {
+                                                text: function (date, value, dayjsDate) {
+                                                    const lang = document.documentElement.lang;
+                                                    const noPhotos = translations[lang].noPhotosOn;
+                                                    return (
+                                                        (value ? value : noPhotos) + 
+                                                        ' ' + 
+                                                        dayjsDate.format('LL')
+                                                    );
+                                                }
+                                            }
+                                        ]
+                                    ]);
+                                });
+                            }
+                        });
+                    </script>
+                </div>
+                <div id="statistics-view" class="tabcontent">
+                    <canvas id="yearly-chart" style="margin-bottom: 20px;"></canvas>
+                    <canvas id="monthly-chart" style="margin-bottom: 20px;"></canvas>
+                    <canvas id="camera-chart" style="height: 800px;"></canvas>
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function () {
+                           const statisticsTab = document.getElementById('statistics-view');
+                           const observer = new MutationObserver((mutations) => {
+                               mutations.forEach((mutation) => {
+                                   if (mutation.attributeName === 'style' && statisticsTab.style.display === 'block') {
+                                       renderStatisticsCharts();
+                                       observer.disconnect();
+                                   }
+                               });
+                           });
+                           observer.observe(statisticsTab, {
+                               attributes: true
+                           });
+                        
+                           function renderStatisticsCharts() {
+                               const yearlyData = {};
+                               const monthlyData = {};
+                        
+                               locations.forEach(loc => {
+                                   if (loc.date_taken) {
+                                       const date = new Date(loc.date_taken);
+                                       const year = date.getFullYear().toString();
+                                       const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                        
+                                       // Yearly data
+                                       if (!yearlyData[year]) {
+                                           yearlyData[year] = { native_gps: 0, no_native_gps: 0, total: 0 };
+                                       }
+                                       if (loc.has_native_gps) {
+                                           yearlyData[year].native_gps++;
+                                       } else {
+                                           yearlyData[year].no_native_gps++;
+                                       }
+                                       yearlyData[year].total++;
+                        
+                                       // Monthly data
+                                       if (!monthlyData[month]) {
+                                           monthlyData[month] = { native_gps: 0, no_native_gps: 0, total: 0 };
+                                       }
+                                       if (loc.has_native_gps) {
+                                           monthlyData[month].native_gps++;
+                                       } else {
+                                           monthlyData[month].no_native_gps++;
+                                       }
+                                       monthlyData[month].total++;
+                                   }
+                               });
+                        
+                               const years = Object.keys(yearlyData).sort();
+                               const nativeGpsCounts = years.map(year => yearlyData[year].native_gps);
+                               const noNativeGpsCounts = years.map(year => yearlyData[year].no_native_gps);
+                               const totalCounts = years.map(year => yearlyData[year].total);
+                               new Chart(document.getElementById('yearly-chart'), {
+                                   type: 'bar',
+                                   data: {
+                                       labels: years,
+                                       datasets: [{
+                                           label: 'Native GPS',
+                                           data: nativeGpsCounts,
+                                           backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                           borderColor: 'rgba(75, 192, 192, 1)',
+                                           borderWidth: 1
+                                       },
+                                       {
+                                           label: 'No Native GPS',
+                                           data: noNativeGpsCounts,
+                                           backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                           borderColor: 'rgba(255, 99, 132, 1)',
+                                           borderWidth: 1
+                                       },
+                                       {
+                                           label: 'Total',
+                                           data: totalCounts,
+                                           backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                                           borderColor: 'rgba(54, 162, 235, 1)',
+                                           borderWidth: 1
+                                       }]
+                                   },
+                                   options: {
+                                       scales: {
+                                           y: {
+                                               beginAtZero: true
+                                           }
+                                       },
+                                       plugins: {
+                                           title: {
+                                               display: true,
+                                               text: 'Number of Photos per Year'
+                                           }
+                                       }
+                                   }
+                               });
+                        
+                               const months = Object.keys(monthlyData).sort();
+                               const monthlyNativeGpsCounts = [];
+                               const monthlyNoNativeGpsCounts = [];
+                               const monthlyTotalCounts = [];
+                        
+                               for (let i = 1; i <= 12; i++) {
+                                   const month = i.toString().padStart(2, '0');
+                                   if (monthlyData[month]) {
+                                       monthlyNativeGpsCounts.push(monthlyData[month].native_gps);
+                                       monthlyNoNativeGpsCounts.push(monthlyData[month].no_native_gps);
+                                       monthlyTotalCounts.push(monthlyData[month].total);
+                                   } else {
+                                       monthlyNativeGpsCounts.push(0);
+                                       monthlyNoNativeGpsCounts.push(0);
+                                       monthlyTotalCounts.push(0);
+                                   }
+                               }
+                        
+                               new Chart(document.getElementById('monthly-chart'), {
+                                   type: 'bar',
+                                   data: {
+                                       labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                                       datasets: [{
+                                           label: 'Native GPS',
+                                           data: monthlyNativeGpsCounts,
+                                           backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                           borderColor: 'rgba(75, 192, 192, 1)',
+                                           borderWidth: 1
+                                       },
+                                       {
+                                           label: 'No Native GPS',
+                                           data: monthlyNoNativeGpsCounts,
+                                           backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                                           borderColor: 'rgba(255, 99, 132, 1)',
+                                           borderWidth: 1
+                                       },
+                                       {
+                                           label: 'Total',
+                                           data: monthlyTotalCounts,
+                                           backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                                           borderColor: 'rgba(54, 162, 235, 1)',
+                                           borderWidth: 1
+                                       }]
+                                   },
+                                   options: {
+                                       scales: {
+                                           y: {
+                                               beginAtZero: true
+                                           }
+                                       },
+                                       plugins: {
+                                           title: {
+                                               display: true,
+                                               text: 'Number of Photos per Month'
+                                           }
+                                       }
+                                   }
+                               });
+                        
+                               // Camera Statistics Chart
+                               const cameraCounts = locations.reduce((acc, loc) => {
+                                   const model = loc.camera_model || 'NA';
+                                   acc[model] = (acc[model] || 0) + 1;
+                                   return acc;
+                               }, {});
+                               const sortedCameras = Object.entries(cameraCounts).sort((a, b) => b[1] - a[1]);
+                               const cameraLabels = sortedCameras.map(item => item[0]);
+                               const cameraData = sortedCameras.map(item => item[1]);
+                               new Chart(document.getElementById('camera-chart'), {
+                                   type: 'bar',
+                                   data: {
+                                       labels: cameraLabels,
+                                       datasets: [{
+                                           label: 'Number of Photos',
+                                           data: cameraData,
+                                           backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                                           borderColor: 'rgba(153, 102, 255, 1)',
+                                           borderWidth: 1
+                                       }]
+                                   },
+                                   options: {
+                                       indexAxis: 'y',
+                                       scales: {
+                                           x: {
+                                               type: 'logarithmic',
+                                               beginAtZero: true
+                                           }
+                                       },
+                                       plugins: {
+                                           title: {
+                                               display: true,
+                                               text: 'Number of Photos by Camera'
+                                           }
+                                       }
+                                   }
+                               });
+                           }
+                        });
+                    </script>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const translations = {
+            'en-US': {
+                photoMap: 'Photo Map',
+                singleView: 'Single View',
+                photoGrid: 'Photo Grid',
+                videoGrid: 'Video Grid',
+                mixedGrid: 'Mixed Grid',
+                heatmap: 'Heatmap',
+                statistics: 'Statistics',
+                filter: 'Filter',
+                year: 'Year:',
+                all: 'All',
+                month: 'Month:',
+                day: 'Day:',
+                startDate: 'Start Date:',
+                endDate: 'End Date:',
+                cameraModel: 'Camera Model:',
+                showPhotosWithoutGps: 'Show photos without GPS',
+                filterBtn: 'Filter',
+                rows: 'Rows:',
+                cols: 'Cols:',
+                playAllVideos: 'Play all videos simultaneously',
+                noPhotosOn: 'No photos on',
+                nativeGps: 'Native GPS',
+                noNativeGps: 'No Native GPS',
+                total: 'Total',
+                numPhotosPerYear: 'Number of Photos per Year',
+                numPhotosPerMonth: 'Number of Photos per Month',
+                numPhotosByCamera: 'Number of Photos by Camera',
+                prevTime: 'Previous Time',
+                nextTime: 'Next Time',
+                prev: 'Previous',
+                next: 'Next',
+                camera: 'Camera:',
+                date: 'Date:',
+                coordinates: 'Coordinates:',
+                path: 'Path:',
+                native: 'Native',
+                assigned: 'Assigned',
+                page: 'Page',
+                of: 'of',
+                go: 'Go',
+                invalidPage: 'Invalid page number. Please enter a number between 1 and',
+                noGpsData: 'No photos with GPS coordinates found in the database.',
+                noGpsWarning: 'Warning: No photos with GPS data found. Map will be centered at [0, 0].',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            },
+            'zh-TW': {
+                photoMap: '照片地圖',
+                singleView: '單張檢視',
+                photoGrid: '照片網格',
+                videoGrid: '影片網格',
+                mixedGrid: '混合網格',
+                heatmap: '熱力圖',
+                statistics: '統計資料',
+                filter: '篩選',
+                year: '年份:',
+                all: '全部',
+                month: '月份:',
+                day: '日期:',
+                startDate: '開始日期:',
+                endDate: '結束日期:',
+                cameraModel: '相機型號:',
+                showPhotosWithoutGps: '顯示沒有GPS的照片',
+                filterBtn: '篩選',
+                rows: '行:',
+                cols: '列:',
+                playAllVideos: '同時播放所有影片',
+                noPhotosOn: '沒有照片於',
+                nativeGps: '原生GPS',
+                noNativeGps: '無原生GPS',
+                total: '總計',
+                numPhotosPerYear: '每年照片數量',
+                numPhotosPerMonth: '每月照片數量',
+                numPhotosByCamera: '各相機照片數量',
+                prevTime: '上一張 時間',
+                nextTime: '下一張 時間',
+                prev: '上一張',
+                next: '下一張',
+                camera: '相機:',
+                date: '日期:',
+                coordinates: '座標:',
+                path: '路徑:',
+                native: '原生',
+                assigned: '指定',
+                page: '頁',
+                of: '之',
+                go: '前往',
+                invalidPage: '無效的頁碼。請輸入1到',
+                noGpsData: '資料庫中找不到帶有GPS座標的照片。',
+                noGpsWarning: '警告：找不到帶有GPS資料的照片。地圖將置中於[0, 0]。',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 貢獻者'
+            },
+            'ja-JP': {
+                photoMap: '写真マップ',
+                singleView: 'シングルビュー',
+                photoGrid: '写真グリッド',
+                videoGrid: 'ビデオグリッド',
+                mixedGrid: '混合グリッド',
+                heatmap: 'ヒートマップ',
+                statistics: '統計',
+                filter: 'フィルター',
+                year: '年:',
+                all: 'すべて',
+                month: '月:',
+                day: '日:',
+                startDate: '開始日:',
+                endDate: '終了日:',
+                cameraModel: 'カメラモデル:',
+                showPhotosWithoutGps: 'GPSのない写真を表示',
+                filterBtn: 'フィルター',
+                rows: '行:',
+                cols: '列:',
+                playAllVideos: 'すべてのビデオを同時に再生',
+                noPhotosOn: '写真がありません',
+                nativeGps: 'ネイティブGPS',
+                noNativeGps: 'GPSなし',
+                total: '合計',
+                numPhotosPerYear: '年別写真数',
+                numPhotosPerMonth: '月別写真数',
+                numPhotosByCamera: 'カメラ別写真数',
+                prevTime: '前へ 時間',
+                nextTime: '次へ 時間',
+                prev: '前へ',
+                next: '次へ',
+                camera: 'カメラ:',
+                date: '日付:',
+                coordinates: '座標:',
+                path: 'パス:',
+                native: 'ネイティブ',
+                assigned: '割り当て',
+                page: 'ページ',
+                of: '/',
+                go: '移動',
+                invalidPage: '無効なページ番号です。1から',
+                noGpsData: 'データベースにGPS座標付きの写真が見つかりません。',
+                noGpsWarning: '警告: GPS データ付きの写真が見つかりません。マップは [0, 0] を中心に表示されます。',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> の貢献者'
+            },
+            'de-DE': {
+                photoMap: 'Fotokarte',
+                singleView: 'Einzelansicht',
+                photoGrid: 'Fotoraster',
+                videoGrid: 'Videoraster',
+                mixedGrid: 'Gemischtes Raster',
+                heatmap: 'Heatmap',
+                statistics: 'Statistiken',
+                filter: 'Filter',
+                year: 'Jahr:',
+                all: 'Alle',
+                month: 'Monat:',
+                day: 'Tag:',
+                startDate: 'Startdatum:',
+                endDate: 'Enddatum:',
+                cameraModel: 'Kameramodell:',
+                showPhotosWithoutGps: 'Fotos ohne GPS anzeigen',
+                filterBtn: 'Filter',
+                rows: 'Zeilen:',
+                cols: 'Spalten:',
+                playAllVideos: 'Alle Videos gleichzeitig abspielen',
+                noPhotosOn: 'Keine Fotos am',
+                nativeGps: 'Natives GPS',
+                noNativeGps: 'Kein natives GPS',
+                total: 'Gesamt',
+                numPhotosPerYear: 'Anzahl der Fotos pro Jahr',
+                numPhotosPerMonth: 'Anzahl der Fotos pro Monat',
+                numPhotosByCamera: 'Anzahl der Fotos pro Kamera',
+                prevTime: 'Zurück Zeit',
+                nextTime: 'Weiter Zeit',
+                prev: 'Zurück',
+                next: 'Weiter',
+                camera: 'Kamera:',
+                date: 'Datum:',
+                coordinates: 'Koordinaten:',
+                path: 'Pfad:',
+                native: 'Nativ',
+                assigned: 'Zugewiesen',
+                page: 'Seite',
+                of: 'von',
+                go: 'Los',
+                invalidPage: 'Ungültige Seitenzahl. Bitte geben Sie eine Zahl zwischen 1 und',
+                noGpsData: 'Keine Fotos mit GPS-Koordinaten in der Datenbank gefunden.',
+                noGpsWarning: 'Warnung: Keine Fotos mit GPS-Daten gefunden. Die Karte wird auf [0, 0] zentriert.',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> Mitwirkende'
+            },
+            'fr-FR': {
+                photoMap: 'Carte photo',
+                singleView: 'Vue unique',
+                photoGrid: 'Grille de photos',
+                videoGrid: 'Grille de vidéos',
+                mixedGrid: 'Grille mixte',
+                heatmap: 'Carte de chaleur',
+                statistics: 'Statistiques',
+                filter: 'Filtre',
+                year: 'Année:',
+                all: 'Tout',
+                month: 'Mois:',
+                day: 'Jour:',
+                startDate: 'Date de début:',
+                endDate: 'Date de fin:',
+                cameraModel: 'Modèle d\'appareil photo:',
+                showPhotosWithoutGps: 'Afficher les photos sans GPS',
+                filterBtn: 'Filtrer',
+                rows: 'Lignes:',
+                cols: 'Colonnes:',
+                playAllVideos: 'Lire toutes les vidéos simultanément',
+                noPhotosOn: 'Aucune photo le',
+                nativeGps: 'GPS natif',
+                noNativeGps: 'Pas de GPS natif',
+                total: 'Total',
+                numPhotosPerYear: 'Nombre de photos par an',
+                numPhotosPerMonth: 'Nombre de photos par mois',
+                numPhotosByCamera: 'Nombre de photos par appareil photo',
+                prevTime: 'Précédent heure',
+                nextTime: 'Suivant heure',
+                prev: 'Précédent',
+                next: 'Suivant',
+                camera: 'Appareil photo:',
+                date: 'Date:',
+                coordinates: 'Coordonnées:',
+                path: 'Chemin:',
+                native: 'Natif',
+                assigned: 'Assigné',
+                page: 'Page',
+                of: 'sur',
+                go: 'Aller',
+                invalidPage: 'Numéro de page invalide. Veuillez entrer un nombre entre 1 et',
+                noGpsData: 'Aucune photo avec des coordonnées GPS trouvée dans la base de données.',
+                noGpsWarning: 'Avertissement : Aucune photo avec des données GPS trouvée. La carte sera centrée sur [0, 0].',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributeurs'
+            },
+            'es-ES': {
+                photoMap: 'Mapa de fotos',
+                singleView: 'Vista única',
+                photoGrid: 'Cuadrícula de fotos',
+                videoGrid: 'Cuadrícula de videos',
+                mixedGrid: 'Cuadrícula mixta',
+                heatmap: 'Mapa de calor',
+                statistics: 'Estadísticas',
+                filter: 'Filtro',
+                year: 'Año:',
+                all: 'Todos',
+                month: 'Mes:',
+                day: 'Día:',
+                startDate: 'Fecha de inicio:',
+                endDate: 'Fecha de fin:',
+                cameraModel: 'Modelo de cámara:',
+                showPhotosWithoutGps: 'Mostrar fotos sin GPS',
+                filterBtn: 'Filtrar',
+                rows: 'Filas:',
+                cols: 'Columnas:',
+                playAllVideos: 'Reproducir todos los videos simultáneamente',
+                noPhotosOn: 'No hay fotos en',
+                nativeGps: 'GPS nativo',
+                noNativeGps: 'Sin GPS nativo',
+                total: 'Total',
+                numPhotosPerYear: 'Número de fotos por año',
+                numPhotosPerMonth: 'Número de fotos por mes',
+                numPhotosByCamera: 'Número de fotos por cámara',
+                prevTime: 'Anterior hora',
+                nextTime: 'Siguiente hora',
+                prev: 'Anterior',
+                next: 'Siguiente',
+                camera: 'Cámara:',
+                date: 'Fecha:',
+                coordinates: 'Coordenadas:',
+                path: 'Ruta:',
+                native: 'Nativo',
+                assigned: 'Asignado',
+                page: 'Página',
+                of: 'de',
+                go: 'Ir',
+                invalidPage: 'Número de página no válido. Ingrese un número entre 1 y',
+                noGpsData: 'No se encontraron fotos con coordenadas GPS en la base de datos.',
+                noGpsWarning: 'Advertencia: No se encontraron fotos con datos GPS. El mapa se centrará en [0, 0].',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> colaboradores'
+            },
+            'pt-BR': {
+                photoMap: 'Mapa de fotos',
+                singleView: 'Visão única',
+                photoGrid: 'Grade de fotos',
+                videoGrid: 'Grade de vídeos',
+                mixedGrid: 'Grade mista',
+                heatmap: 'Mapa de calor',
+                statistics: 'Estatísticas',
+                filter: 'Filtro',
+                year: 'Ano:',
+                all: 'Todos',
+                month: 'Mês:',
+                day: 'Dia:',
+                startDate: 'Data de início:',
+                endDate: 'Data de fim:',
+                cameraModel: 'Modelo da câmera:',
+                showPhotosWithoutGps: 'Mostrar fotos sem GPS',
+                filterBtn: 'Filtrar',
+                rows: 'Linhas:',
+                cols: 'Colunas:',
+                playAllVideos: 'Reproduzir todos os vídeos simultaneamente',
+                noPhotosOn: 'Nenhuma foto em',
+                nativeGps: 'GPS nativo',
+                noNativeGps: 'Sem GPS nativo',
+                total: 'Total',
+                numPhotosPerYear: 'Número de fotos por ano',
+                numPhotosPerMonth: 'Número de fotos por mês',
+                numPhotosByCamera: 'Número de fotos por câmera',
+                prevTime: 'Anterior hora',
+                nextTime: 'Próximo hora',
+                prev: 'Anterior',
+                next: 'Próximo',
+                camera: 'Câmera:',
+                date: 'Data:',
+                coordinates: 'Coordenadas:',
+                path: 'Caminho:',
+                native: 'Nativo',
+                assigned: 'Atribuído',
+                page: 'Página',
+                of: 'de',
+                go: 'Ir',
+                invalidPage: 'Número de página inválido. Por favor, insira um número entre 1 e',
+                noGpsData: 'Nenhuma foto com coordenadas GPS encontrada no banco de dados.',
+                noGpsWarning: 'Aviso: Nenhuma foto com dados GPS encontrada. O mapa será centrado em [0, 0].',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contribuidores'
+            },
+            'ru-RU': {
+                photoMap: 'Фотокарта',
+                singleView: 'Единый вид',
+                photoGrid: 'Фотосетка',
+                videoGrid: 'Видеосетка',
+                mixedGrid: 'Смешанная сетка',
+                heatmap: 'Тепловая карта',
+                statistics: 'Статистика',
+                filter: 'Фильтр',
+                year: 'Год:',
+                all: 'Все',
+                month: 'Месяц:',
+                day: 'День:',
+                startDate: 'Дата начала:',
+                endDate: 'Дата окончания:',
+                cameraModel: 'Модель камеры:',
+                showPhotosWithoutGps: 'Показать фотографии без GPS',
+                filterBtn: 'Фильтр',
+                rows: 'Ряды:',
+                cols: 'Колонки:',
+                playAllVideos: 'Воспроизводить все видео одновременно',
+                noPhotosOn: 'Нет фотографий на',
+                nativeGps: 'Собственный GPS',
+                noNativeGps: 'Без собственного GPS',
+                total: 'Всего',
+                numPhotosPerYear: 'Количество фотографий в год',
+                numPhotosPerMonth: 'Количество фотографий в месяц',
+                numPhotosByCamera: 'Количество фотографий по камере',
+                prevTime: 'Предыдущее Время',
+                nextTime: 'Следующее Время',
+                prev: 'Предыдущее',
+                next: 'Следующее',
+                camera: 'Камера:',
+                date: 'Дата:',
+                coordinates: 'Координаты:',
+                path: 'Путь:',
+                native: 'Собственный',
+                assigned: 'Назначено',
+                page: 'Страница',
+                of: 'из',
+                go: 'Перейти',
+                invalidPage: 'Неверный номер страницы. Пожалуйста, введите число между 1 и',
+                noGpsData: 'В базе данных не найдено фотографий с GPS-координатами.',
+                noGpsWarning: 'Предупреждение: не найдено фотографий с данными GPS. Карта будет отцентрирована по [0, 0].',
+                osmContributors: '&copy; <a href="https://www.openstreetmap.org/copyright">Участники OpenStreetMap</a>'
+            }
+        };
+
+        function changeLanguage() {
+            const lang = document.getElementById('language-selector').value;
+            document.documentElement.lang = lang;
+            const elements = document.querySelectorAll('[data-i18n]');
+            elements.forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang] && translations[lang][key]) {
+                    el.innerHTML = translations[lang][key];
+                }
+            });
+            // Update chart titles
+            const yearlyChart = Chart.getChart('yearly-chart');
+            if (yearlyChart) {
+                yearlyChart.options.plugins.title.text = translations[lang].numPhotosPerYear;
+                yearlyChart.update();
+            }
+            const monthlyChart = Chart.getChart('monthly-chart');
+            if (monthlyChart) {
+                monthlyChart.options.plugins.title.text = translations[lang].numPhotosPerMonth;
+                monthlyChart.update();
+            }
+            const cameraChart = Chart.getChart('camera-chart');
+            if (cameraChart) {
+                cameraChart.options.plugins.title.text = translations[lang].numPhotosByCamera;
+                cameraChart.update();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const userLang = navigator.language || navigator.userLanguage;
+            const selector = document.getElementById('language-selector');
+            if ([...selector.options].some(option => option.value === userLang)) {
+                selector.value = userLang;
+            }
+            changeLanguage();
+        });
+
+        const location_keys = __KEYS_JSON__;
+        const camera_models = __CAMERAS_JSON__;
+        const locations_data = __LOCATIONS_JSON__;
+        const locations = locations_data.map(row => {
+            const obj = {};
+            location_keys.forEach((key, index) => {
+                if (key === 'camera_model') {
+                    if (row[index] !== null) {
+                        obj[key] = camera_models[row[index]];
+                    } else {
+                        obj[key] = null;
+                    }
+                } else {
+                    obj[key] = row[index];
+                }
+            });
+            return obj;
+        });
+        let last_known_lat = -48.876667;
+        let last_known_lon = -123.393333;
+        let earliest_photo_with_gps_date = null;
+        // Find the date of the earliest photo that has GPS data.
+        // Since locations is sorted by date_taken, the first one we find is the earliest.
+        for (let i = 0; i < locations.length; i++) {
+            if (locations[i].gps_latitude !== null && locations[i].gps_longitude !== null) {
+                earliest_photo_with_gps_date = locations[i].date_taken;
+                break;
+            }
+        }
+        locations.forEach(loc => {
+            if (loc.gps_latitude !== null && loc.gps_longitude !== null) {
+                loc.has_native_gps = true;
+                last_known_lat = loc.gps_latitude;
+                last_known_lon = loc.gps_longitude;
+            } else {
+                loc.has_native_gps = false;
+                // If this photo's date is before the earliest photo with GPS, send it to Nemo.
+                if (earliest_photo_with_gps_date && loc.date_taken && loc.date_taken < earliest_photo_with_gps_date) {
+                    loc.gps_latitude = -48.876667;
+                    loc.gps_longitude = -123.393333;
+                } else if (last_known_lat !== null) { // Otherwise, use the last known location.
+                    loc.gps_latitude = last_known_lat;
+                    loc.gps_longitude = last_known_lon;
+                }
+            }
+        });
+        let current_cluster_photos = [];
+        let current_cluster_videos = [];
+        let current_photo_grid_page = 0;
+        let current_video_grid_page = 0;
+        let current_mixed_grid_page = 0;
+        let filtered_locations = locations;
+        let is_default_view = true;
+        function populateYearFilter() {
+            const yearSelect = document.getElementById('year-select');
+            const years = new Set();
+            locations.forEach(loc => {
+                if (loc.date_taken) {
+                    years.add(loc.date_taken.substring(0, 4));
+                }
+            });
+            yearSelect.innerHTML = '<option value="all" data-i18n="all">All</option>';
+            Array.from(years).sort().reverse().forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                yearSelect.appendChild(option);
+            });
+        }
+        function populateCameraFilter() {
+            const cameraSelect = document.getElementById('camera-select');
+            cameraSelect.innerHTML = '<option value="all" data-i18n="all">All</option>';
+            camera_models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                cameraSelect.appendChild(option);
+            });
+        }
+        function populateDayFilter() {
+            const daySelect = document.getElementById('day-select');
+            daySelect.innerHTML = '<option value="all" data-i18n="all">All</option>';
+            for (let i = 1; i <= 31; i++) {
+                const option = document.createElement('option');
+                const day = String(i).padStart(2, '0');
+                option.value = day;
+                option.textContent = i;
+                daySelect.appendChild(option);
+            }
+        }
+        if (locations.length === 0) {
+            alert("No photos with GPS coordinates found in the database.");
+        } else {
+            const first_location_with_gps = locations.find(loc => loc.gps_latitude !== null && loc.gps_longitude !== null);
+            let initial_coords = [0, 0]; // Default coordinates
+            if (first_location_with_gps) {
+                initial_coords = [first_location_with_gps.gps_latitude, first_location_with_gps.gps_longitude];
+            } else {
+                alert("Warning: No photos with GPS data found. Map will be centered at [0, 0].");
+            }
+            const map = L.map('map').setView(initial_coords, 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+            const markers = L.markerClusterGroup({ zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false });
+            let all_markers = [];
+            function openTab(evt, tabName) {
+                var i, tabcontent, tablinks;
+                tabcontent = document.getElementsByClassName("tabcontent");
+                for (i = 0; i < tabcontent.length; i++) {
+                    tabcontent[i].style.display = "none";
+                }
+                tablinks = document.getElementsByClassName("tablinks");
+                for (i = 0; i < tablinks.length; i++) {
+                    tablinks[i].className = tablinks[i].className.replace(" active", "");
+                }
+                document.getElementById(tabName).style.display = "block";
+                if (evt) {
+                    evt.currentTarget.className += " active";
+                }
+            }
+
+            function format_time_diff(diff_seconds) {
+                if (isNaN(diff_seconds) || diff_seconds < 0) {
+                    return '';
+                }
+
+                const days = Math.floor(diff_seconds / (3600 * 24));
+                diff_seconds -= days * 3600 * 24;
+                const hours = Math.floor(diff_seconds / 3600);
+                diff_seconds -= hours * 3600;
+                const minutes = Math.floor(diff_seconds / 60);
+                const seconds = Math.floor(diff_seconds % 60);
+
+                let result = '';
+                if (days > 0) result += `${days}d `;
+                if (hours > 0) result += `${hours}h `;
+                if (minutes > 0) result += `${minutes}m `;
+                if (seconds > 0) result += `${seconds}s`;
+
+                return result.trim() || '0s';
+            }
+
+            function updateSidebar(photo, all_media, current_index_in_cluster) {
+                const singleView = document.getElementById('single-view');
+                const current_date_index = locations.findIndex(p => p.file_path_web === photo.file_path_web);
+                const lang = document.documentElement.lang;
+
+                // Time difference calculation
+                let prev_time_diff_content = '';
+                let next_time_diff_content = '';
+
+                if (photo.date_taken) {
+                    const current_time = new Date(photo.date_taken).getTime();
+                    
+                    // Previous photo
+                    if (current_date_index > 0) {
+                        const prev_photo = locations[current_date_index - 1];
+                        if (prev_photo && prev_photo.date_taken) {
+                            const prev_time = new Date(prev_photo.date_taken).getTime();
+                            const diff_seconds = Math.abs(current_time - prev_time) / 1000;
+                            prev_time_diff_content = format_time_diff(diff_seconds);
+                        }
+                    }
+
+                    // Next photo
+                    if (current_date_index < locations.length - 1) {
+                        const next_photo = locations[current_date_index + 1];
+                        if (next_photo && next_photo.date_taken) {
+                            const next_time = new Date(next_photo.date_taken).getTime();
+                            const diff_seconds = Math.abs(next_time - current_time) / 1000;
+                            next_time_diff_content = format_time_diff(diff_seconds);
+                        }
+                    }
+                }
+
+                const formatted_date = photo.date_taken || 'N/A';
+                let navigationHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: flex-start; align-items: center; gap: 10px;">
+                            <button onclick="navigate_date(${current_date_index - 1})">${translations[lang].prevTime}</button>
+                            <button onclick="navigate_date(${current_date_index + 1})">${translations[lang].nextTime}</button>
+                            <button ${all_media.length <= 1 ? 'disabled' : ''} onclick="navigate_cluster(${current_index_in_cluster - 1})">${translations[lang].prev}</button>
+                            <button ${all_media.length <= 1 ? 'disabled' : ''} onclick="navigate_cluster(${current_index_in_cluster + 1})">${translations[lang].next}</button>
+                            ${all_media.length > 1 ? `<span style="user-select: none; margin-left: 10px;">${current_index_in_cluster + 1} / ${all_media.length}</span>` : ''}
+                        </div>
+                        <div style="display: flex; justify-content: flex-start; gap: 10px; margin-top: 5px; font-size: 0.8em; color: grey;">
+                            <span style="text-align: center; flex: 1;">${prev_time_diff_content}</span>
+                            <span style="text-align: center; flex: 1;">${next_time_diff_content}</span>
+                            <!-- Empty spans as placeholders to maintain alignment for the other two buttons -->
+                            <span style="flex: 1;"></span>
+                            <span style="flex: 1;"></span>
+                        </div>
+                    </div>
+                `;
+                let mediaHTML = '';
+                const filePathLower = photo.file_path_web.toLowerCase();
+                if (filePathLower.endsWith('.mp4') || filePathLower.endsWith('.mov')) {
+                    mediaHTML = `<video src="file:///${photo.file_path_web}" controls style="width: 100%; height: auto; max-height: 70vh;"></video>`;
+                } else {
+                    mediaHTML = `<img src="file:///${photo.file_path_web}" alt="Photo thumbnail" style="width: 100%; height: auto; max-height: 70vh;">`;
+                }
+                singleView.innerHTML = navigationHTML + `
+                    <b>${translations[lang].camera}</b> ${photo.camera_model || 'N/A'}<br>
+                    <b>${translations[lang].date}</b> ${formatted_date}<br>
+                    <b>${translations[lang].coordinates}</b> ${photo.gps_latitude}, ${photo.gps_longitude}(${photo.has_native_gps ? translations[lang].native : translations[lang].assigned})<br>
+                    <b>${translations[lang].path}</b> ${photo.file_path_web}<br>
+                    ${mediaHTML}<br>
+                `;
+                renderGrid('photo');
+                renderGrid('video');
+                renderGrid('mixed');
+                if (document.getElementById('sidebar').offsetWidth === 0) {
+                    document.getElementById('sidebar').style.width = '800px';
+                    openTab(null, 'single-view');
+                }
+                if (photo.gps_latitude !== null && photo.gps_longitude !== null) {
+                    map.panTo(new L.LatLng(photo.gps_latitude, photo.gps_longitude), {animate: false});
+                }
+                map.invalidateSize();
+            }
+            function renderGrid(mediaType) {
+                const is_photo = mediaType === 'photo';
+                const is_video = mediaType === 'video';
+                const is_mixed = mediaType === 'mixed';
+
+                let grid_data;
+                if (is_photo) {
+                    grid_data = current_cluster_photos;
+                } else if (is_video) {
+                    grid_data = current_cluster_videos;
+                } else { // mixed
+                    grid_data = [].concat(current_cluster_photos, current_cluster_videos);
+                }
+
+                let current_page;
+                if (is_photo) {
+                    current_page = current_photo_grid_page;
+                } else if (is_video) {
+                    current_page = current_video_grid_page;
+                } else { // mixed
+                    current_page = current_mixed_grid_page;
+                }
+
+                const rows = document.getElementById(is_photo ? 'grid-rows' : is_video ? 'video-grid-rows' : 'mixed-grid-rows').value;
+                const cols = document.getElementById(is_photo ? 'grid-cols' : is_video ? 'video-grid-cols' : 'mixed-grid-cols').value;
+                const items_per_page = rows * cols;
+                const gridContainer = document.getElementById(is_photo ? 'photo-grid-container' : is_video ? 'video-grid-container' : 'mixed-grid-container');
+                const gridPagination = document.getElementById(is_photo ? 'photo-grid-pagination' : is_video ? 'video-grid-pagination' : 'mixed-grid-pagination');
+
+                gridContainer.innerHTML = '';
+                gridPagination.innerHTML = '';
+                gridContainer.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+                const start_index = current_page * items_per_page;
+                const end_index = start_index + items_per_page;
+                const items_to_display = grid_data.slice(start_index, end_index);
+                items_to_display.forEach(item => {
+                    const filePathLower = item.file_path_web.toLowerCase();
+                    let mediaElement;
+                    if (filePathLower.endsWith('.mp4') || filePathLower.endsWith('.mov')) {
+                        mediaElement = document.createElement('video');
+                        mediaElement.src = `file:///${item.file_path_web}`;
+                        mediaElement.controls = false;
+                        mediaElement.muted = true;
+                        mediaElement.loop = true;
+                        mediaElement.preload = "metadata";
+                        mediaElement.style.objectFit = "cover";
+                        
+                        let playAllCheckbox;
+                        if (is_video) {
+                            playAllCheckbox = document.getElementById('play-all-videos-checkbox');
+                        } else if (is_mixed) {
+                            playAllCheckbox = document.getElementById('play-all-mixed-grid-videos-checkbox');
+                        }
+
+                        if (playAllCheckbox && playAllCheckbox.checked) {
+                            mediaElement.play();
+                        } else {
+                            mediaElement.addEventListener('mouseenter', () => mediaElement.play());
+                            mediaElement.addEventListener('mouseleave', () => mediaElement.pause());
+                        }
+                    } else {
+                        mediaElement = document.createElement('img');
+                        mediaElement.src = `file:///${item.file_path_web}`;
+                        mediaElement.alt = "Media thumbnail";
+                        mediaElement.style.objectFit = "cover";
+                    }
+                    mediaElement.style.width = "100%";
+                    mediaElement.style.height = "100%";
+                    mediaElement.style.cursor = "pointer";
+                    const filename = item.file_path_web.split('/').pop();
+                    const title = `Date: ${item.date_taken || 'N/A'}\nCamera: ${item.camera_model || 'N/A'}\nFile: ${filename}`;
+                    mediaElement.title = title;
+                    mediaElement.onclick = function() {
+                        const all_media = [].concat(current_cluster_photos, current_cluster_videos);
+                        const index = all_media.findIndex(p => p.file_path_web === item.file_path_web);
+                        updateSidebar(item, all_media, index);
+                        openTab({currentTarget: document.getElementsByClassName('tablinks')[0]}, 'single-view');
+                    };
+                    gridContainer.appendChild(mediaElement);
+                });
+                const num_pages = Math.ceil(grid_data.length / items_per_page);
+                const lang = document.documentElement.lang;
+                if (num_pages > 1) {
+                    let prev_page = current_page - 1;
+                    if (prev_page < 0) prev_page = num_pages - 1;
+                    let next_page = current_page + 1;
+                    if (next_page >= num_pages) next_page = 0;
+                    let paginationHTML = '';
+                    paginationHTML += `<button onclick="changeGridPage('${mediaType}', ${prev_page})"> &lt;&lt; </button>`;
+                    paginationHTML += `<button onclick="changeGridPage('${mediaType}', ${next_page})"> &gt;&gt; </button>`;
+                    paginationHTML += `<span>${translations[lang].page} ${current_page + 1} ${translations[lang].of} ${num_pages}</span>`;
+                    paginationHTML += `<input type="number" id="${mediaType}-page-input" min="1" max="${num_pages}" style="width: 50px;">`;
+                    paginationHTML += `<button onclick="goToPage('${mediaType}')">${translations[lang].go}</button>`;
+                    gridPagination.innerHTML = paginationHTML;
+                } else {
+                    gridPagination.innerHTML = '';
+                }
+            }
+            window.goToPage = function(mediaType) {
+                const pageInput = document.getElementById(`${mediaType}-page-input`);
+                let page = parseInt(pageInput.value, 10) - 1;
+                const is_photo = mediaType === 'photo';
+                const is_video = mediaType === 'video';
+                const is_mixed = mediaType === 'mixed';
+                const lang = document.documentElement.lang;
+
+                let grid_data;
+                if (is_photo) {
+                    grid_data = current_cluster_photos;
+                } else if (is_video) {
+                    grid_data = current_cluster_videos;
+                } else { // mixed
+                    grid_data = [].concat(current_cluster_photos, current_cluster_videos);
+                }
+
+                const rows = document.getElementById(is_photo ? 'grid-rows' : is_video ? 'video-grid-rows' : 'mixed-grid-rows').value;
+                const cols = document.getElementById(is_photo ? 'grid-cols' : is_video ? 'video-grid-cols' : 'mixed-grid-cols').value;
+                const items_per_page = rows * cols;
+                const num_pages = Math.ceil(grid_data.length / items_per_page);
+        
+                if (page >= 0 && page < num_pages) {
+                    if (is_photo) {
+                        current_photo_grid_page = page;
+                    } else if (is_video) {
+                        current_video_grid_page = page;
+                    } else { // mixed
+                        current_mixed_grid_page = page;
+                    }
+                    renderGrid(mediaType);
+                } else {
+                    alert(`${translations[lang].invalidPage} ${num_pages}.`);
+                }
+            }
+        
+            window.changeGridPage = function(mediaType, page) {
+                page = parseInt(page, 10);
+                if (mediaType === 'photo') {
+                    current_photo_grid_page = page;
+                } else if (mediaType === 'video') {
+                    current_video_grid_page = page;
+                } else { // mixed
+                    current_mixed_grid_page = page;
+                }
+                renderGrid(mediaType);
+            }
+            window.changeGridSize = function() {
+                current_photo_grid_page = 0;
+                renderGrid('photo');
+            }
+            window.changeVideoGridSize = function() {
+                current_video_grid_page = 0;
+                renderGrid('video');
+            }
+            window.changeMixedGridSize = function() {
+                current_mixed_grid_page = 0;
+                renderGrid('mixed');
+            }
+            window.togglePlayAllVideos = function() {
+                const playAll = document.getElementById('play-all-videos-checkbox').checked;
+                const videoElements = document.querySelectorAll('#video-grid-container video');
+                videoElements.forEach(video => {
+                    if (playAll) {
+                        video.play();
+                    } else {
+                        video.pause();
+                    }
+                });
+            };
+            window.togglePlayAllMixedGridVideos = function() {
+                const playAll = document.getElementById('play-all-mixed-grid-videos-checkbox').checked;
+                const videoElements = document.querySelectorAll('#mixed-grid-container video');
+                videoElements.forEach(video => {
+                    if (playAll) {
+                        video.play();
+                    } else {
+                        video.pause();
+                    }
+                });
+            };
+            window.navigate_cluster = function(next_index) {
+                const all_media = [].concat(current_cluster_photos, current_cluster_videos);
+                if (next_index < 0) {
+                    next_index = all_media.length - 1;
+                } else if (next_index >= all_media.length) {
+                    next_index = 0;
+                }
+                const next_photo = all_media[next_index];
+                map.panTo(new L.LatLng(next_photo.gps_latitude, next_photo.gps_longitude));
+                updateSidebar(next_photo, all_media, next_index);
+            }
+            window.navigate_date = function(next_index) {
+                // CHANGE: Use 'locations' instead of 'filtered_locations' for chronological navigation
+                if (next_index < 0) {
+                    next_index = locations.length - 1;
+                } else if (next_index >= locations.length) {
+                    next_index = 0;
+                }
+                const next_photo = locations[next_index]; // CHANGE: Use locations here
+                const photos_at_coord = all_markers.filter(m => {
+                    const lat_diff = Math.abs(m.getLatLng().lat - next_photo.gps_latitude);
+                    const lon_diff = Math.abs(m.getLatLng().lng - next_photo.gps_longitude);
+                    return lat_diff < 0.000001 && lon_diff < 0.000001;
+                });
+                const all_media_at_coord = photos_at_coord.map(m => m.photo);
+                all_media_at_coord.sort((a, b) => {
+                    const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                    const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                    if (dateA && dateB) return dateB - dateA;
+                    if (dateA) return -1;
+                    if (dateB) return 1;
+                    return 0;
+                });
+                // Separate into photos and videos
+                current_cluster_photos = all_media_at_coord.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                current_cluster_videos = all_media_at_coord.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                const current_index_in_cluster = all_media_at_coord.findIndex(p => p.file_path_web === next_photo.file_path_web);
+                updateSidebar(next_photo, all_media_at_coord, current_index_in_cluster);
+            }
+            function updateMapMarkers(locations_to_show) {
+                markers.clearLayers();
+                all_markers = [];
+                locations_to_show.forEach(loc => {
+                    // Skip photos that still don't have a location (i.e., those from the start of the timeline)
+                    if (loc.gps_latitude === null || loc.gps_longitude === null) {
+                        return;
+                    }
+                    const marker = L.marker([loc.gps_latitude, loc.gps_longitude]);
+                    marker.photo = loc;
+                    all_markers.push(marker);
+                    markers.addLayer(marker);
+                });
+                if (markers.getBounds().isValid()) {
+                    map.fitBounds(markers.getBounds());
+                }
+            }
+            // Use event delegation for marker clicks for much better performance
+            markers.on('click', function(e) {
+                const clicked_marker = e.layer;
+                const photos_at_coord = all_markers.filter(m => {
+                    const lat_diff = Math.abs(m.getLatLng().lat - clicked_marker.getLatLng().lat);
+                    const lon_diff = Math.abs(m.getLatLng().lng - clicked_marker.getLatLng().lng);
+                    return lat_diff < 0.000001 && lon_diff < 0.000001;
+                });
+                const all_media_at_coord = photos_at_coord.map(m => m.photo);
+                all_media_at_coord.sort((a, b) => {
+                    const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                    const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                    if (dateA && dateB) return dateB - dateA;
+                    if (dateA) return -1;
+                    if (dateB) return 1;
+                    return 0;
+                });
+                // Separate into photos and videos
+                current_cluster_photos = all_media_at_coord.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                current_cluster_videos = all_media_at_coord.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                current_photo_grid_page = 0;
+                current_video_grid_page = 0;
+                current_mixed_grid_page = 0;
+                const index = all_media_at_coord.findIndex(p => p.file_path_web === clicked_marker.photo.file_path_web);
+                updateSidebar(clicked_marker.photo, all_media_at_coord, index);
+            });
+            populateYearFilter();
+            populateCameraFilter();
+            populateDayFilter();
+            updateMapMarkers(locations);
+            document.getElementById('filter-button').addEventListener('click', function() {
+                const year = document.getElementById('year-select').value;
+                const month = document.getElementById('month-select').value;
+                const day = document.getElementById('day-select').value;
+                const camera = document.getElementById('camera-select').value;
+                const show_assigned_gps = document.getElementById('show-assigned-gps-checkbox').checked;
+                const startDate = document.getElementById('start-date').value;
+                const endDate = document.getElementById('end-date').value;
+        
+                const start = startDate ? new Date(startDate) : null;
+                const end = endDate ? new Date(endDate) : null;
+                if (start) start.setHours(0, 0, 0, 0);
+                if (end) end.setHours(23, 59, 59, 999);
+        
+                const is_now_default = (year === 'all' && month === 'all' && day === 'all' && camera === 'all' && show_assigned_gps && !startDate && !endDate);
+                if (is_now_default) {
+                    if (!is_default_view) {
+                        // If we are returning to the default view, reload the page.
+                        location.reload();
+                    }
+                    // If we are already in the default view, do nothing.
+                    return;
+                }
+                // If we are applying any other filter, mark that we are no longer in the default view.
+                is_default_view = false;
+                let temp_locations = locations;
+                // Filter by date
+                const is_date_filtered = !(year === 'all' && month === 'all' && day === 'all');
+                if (is_date_filtered) {
+                    temp_locations = temp_locations.filter(loc => {
+                        if (!loc.date_taken) return false;
+                        const photo_year = loc.date_taken.substring(0, 4);
+                        const photo_month = loc.date_taken.substring(5, 7);
+                        const photo_day = loc.date_taken.substring(8, 10);
+                        const year_match = (year === 'all' || photo_year === year);
+                        const month_match = (month === 'all' || photo_month === month);
+                        const day_match = (day === 'all' || photo_day === day);
+                        return year_match && month_match && day_match;
+                    });
+                }
+        
+                // Filter by date range
+                if (start || end) {
+                    temp_locations = temp_locations.filter(loc => {
+                        if (!loc.date_taken) return false;
+                        const date = new Date(loc.date_taken);
+                        return (!start || date >= start) && (!end || date <= end);
+                    });
+                }
+        
+                // Filter by camera
+                if (camera !== 'all') {
+                    temp_locations = temp_locations.filter(loc => loc.camera_model === camera);
+                }
+                // Filter by GPS status
+                if (!show_assigned_gps) {
+                    temp_locations = temp_locations.filter(loc => loc.has_native_gps);
+                }
+                filtered_locations = temp_locations;
+                updateMapMarkers(filtered_locations);
+            });
+            markers.on('clusterclick', function (a) {
+                const cluster_markers = a.layer.getAllChildMarkers();
+                let all_media_in_cluster = cluster_markers.map(m => m.photo);
+                all_media_in_cluster.sort((a, b) => {
+                    const dateA = a.date_taken ? new Date(a.date_taken) : null;
+                    const dateB = b.date_taken ? new Date(b.date_taken) : null;
+                    if (dateA && dateB) return dateB - dateA;
+                    if (dateA) return -1;
+                    if (dateB) return 1;
+                    return 0;
+                });
+                // Separate into photos and videos
+                current_cluster_photos = all_media_in_cluster.filter(p => !p.file_path_web.toLowerCase().endsWith('.mp4') && !p.file_path_web.toLowerCase().endsWith('.mov'));
+                current_cluster_videos = all_media_in_cluster.filter(p => p.file_path_web.toLowerCase().endsWith('.mp4') || p.file_path_web.toLowerCase().endsWith('.mov'));
+                current_photo_grid_page = 0;
+                current_video_grid_page = 0;
+                current_mixed_grid_page = 0;
+                updateSidebar(all_media_in_cluster[0], all_media_in_cluster, 0);
+            });
+            markers.on('clusterdblclick', function (a) {
+                a.layer.zoomToBounds();
+            });
+            map.addLayer(markers);
+            if (markers.getBounds().isValid()) {
+                map.fitBounds(markers.getBounds());
+            }
+            setTimeout(function() {
+                map.invalidateSize();
+            }, 100);
+            // Set default tab
+            openTab({currentTarget: document.getElementsByClassName('tablinks')[0]}, 'single-view');
+            // Resizer logic
+            const resizer = document.getElementById('resizer');
+            const sidebar = document.getElementById('sidebar');
+            const mapContainer = document.getElementById('map');
+            resizer.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('mouseup', mouseUpHandler);
+            });
+            function mouseMoveHandler(e) {
+                const newWidth = window.innerWidth - e.clientX;
+                if (newWidth > 10 && newWidth < window.innerWidth - 200) { // Min and max width
+                    sidebar.style.width = newWidth + 'px';
+                }
+            }
+            function mouseUpHandler() {
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('mouseup', mouseUpHandler);
+                map.invalidateSize();
+            }
+        }
+    </script>
+</body>
+</html>
