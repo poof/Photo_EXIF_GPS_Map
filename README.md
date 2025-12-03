@@ -70,7 +70,7 @@ This project scans a directory of photos and videos, extracts their EXIF metadat
     *   Includes a powerful sidebar with multiple modes: **Single View**, **Photo/Video Wall**, and **Heatmap**.
     *   Allows filtering media on the map by **year, month, day, and camera model**.
 *   **Multi-language Support**:
-    *   The GUI and the generated map support multiple languages, including: **English, Traditional Chinese (正體中文), Japanese, German, French, Spanish, Portuguese, and Russian**.
+    *   The GUI and the generated map support multiple languages, including: **English, Traditional Chinese, Japanese, German, French, Spanish, Portuguese, and Russian**.
 
 ## How to Use
 
