@@ -1,0 +1,4 @@
+exifread
+pandas
+tqdm
+ttkthemes
