@@ -20,7 +20,7 @@
     *   提供強大的側邊欄，包含 **單一檢視**、**照片/影片牆**、**熱力圖** 等多種模式。
     *   可根據 **年、月、日、相機型號** 篩選地圖上的媒體。
 *   **多國語言支援**:
-    *   圖形介面與產生的地圖均支援 **繁體中文** 與 **英文**。
+    *   圖形介面與產生的地圖均支援多國語言，包含：**正體中文、英文、日文、德文、法文、西班牙文、葡萄牙文、俄文**。
 
 ## 使用方法
 
@@ -70,7 +70,7 @@ This project scans a directory of photos and videos, extracts their EXIF metadat
     *   Includes a powerful sidebar with multiple modes: **Single View**, **Photo/Video Wall**, and **Heatmap**.
     *   Allows filtering media on the map by **year, month, day, and camera model**.
 *   **Multi-language Support**:
-    *   The GUI and the generated map support both **Traditional Chinese** and **English**.
+    *   The GUI and the generated map support multiple languages, including: **English, Traditional Chinese (正體中文), Japanese, German, French, Spanish, Portuguese, and Russian**.
 
 ## How to Use
 

@@ -393,7 +393,7 @@ class PhotoManagerGUI(tk.Frame):
             self.scan_button.config(state=tk.DISABLED, text="Stopping...")
 
     def generate_map(self):
-        template_file = "map_template_zh-TW.html"
+        template_file = "map_template_i18n.html"
         template = os.path.join(self.web_dir, template_file)
         start_date, end_date, camera_filter = None, None, None
 
@@ -420,7 +420,7 @@ class PhotoManagerGUI(tk.Frame):
         
         # Use a fixed output file name for zh-TW as language selection is removed
         base_output_dir = os.path.dirname(self.output_path)
-        output_file_name = "photo_map_zh-TW.html"
+        output_file_name = "photo_map_i18n.html"
         dynamic_output_path = os.path.join(base_output_dir, output_file_name)
 
         # Ensure the output directory exists
