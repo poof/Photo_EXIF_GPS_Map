@@ -1,3 +1,6 @@
+<img width="2048" height="1043" alt="image" src="https://github.com/user-attachments/assets/53a0321a-bf09-40b4-9550-3c551526e8de" />
+<img width="1914" height="949" alt="image" src="https://github.com/user-attachments/assets/03e9f72d-2ab4-4f93-a3cf-783a35a3dbef" />
+
 # 照片 EXIF 資訊擷取專案 v1.1.0
 
 本專案旨在掃描指定資料夾中的所有照片與影片，擷取其 EXIF 或中繼資料，並將其儲存到 SQLite 資料庫中，最終生成一個互動式的地圖來呈現媒體的地理位置。
